@@ -26,10 +26,33 @@ XIU_E = ['箕', '尾', '心', '房', '氐', '亢', '角'] # 东(左) 下->上
 # 合并为一个完整列表用于天盘 (逆时针排布在天盘上，或顺时针，视具体流派，此处参考图示为顺时针)
 XIU_ALL = XIU_E[::-1] + XIU_S + XIU_W + XIU_N[::-1] 
 
+ORDERED_XIU_R = [
+    '虚', '女', '牛', '斗', '箕', '尾', '心', '房', '氐', '亢', '角', '轸', '翼', '张', 
+    '星', '柳', '鬼', '井', '参', '觜', '毕', '昴', '胃', '娄', '奎', '壁', '室', '危'
+]
+
+# --- 🛠️ 修正后的数据结构：分野对应表 ---
+# 格式：{ 月将(地支): [管辖的星宿列表] }
+# 依据：淮南子/六壬式盘经典分野
+# 注意：列表顺序需要符合圆周上的逆时针/顺时针排布，这里依据图片视觉调整
+GEN_TO_XIU_MAP = {
+    '神后': ['女', '虚', '危'],      # 子
+    '大吉': ['斗', '牛'],            # 丑
+    '功曹': ['尾', '箕'],            # 寅
+    '太冲': ['氐', '房', '心'],      # 卯
+    '天罡': ['角', '亢'],            # 辰
+    '太乙': ['翼', '轸'],            # 巳
+    '胜光': ['柳', '星', '张'],      # 午
+    '小吉': ['井', '鬼'],            # 未
+    '传送': ['觜', '参'],            # 申
+    '从魁': ['胃', '昴', '毕'],      # 酉
+    '河魁': ['奎', '娄'],            # 戌
+    '登明': ['室', '壁']             # 亥
+}
+
 # 十二月将神名 (子->亥) 
 # 注意：在六壬中，神后(子)对应正北，但在天盘上随月将移动
-MOON_GENERALS = ['神后', '大吉', '功曹', '太冲', '天罡', '太乙', '胜光', '小吉', '传送', '从魁', '河魁', '登明']
-# 十二地支 (方位：子在北/下，午在南/上)
+MOON_GENERALS = ['神后', '大吉', '功曹', '太冲', '天罡', '太乙', '胜光', '小吉', '传送', '从魁', '河魁', '登明']# 十二地支 (方位：子在北/下，午在南/上)
 EARTHLY_BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
 # 天干
 HEAVENLY_STEMS = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
@@ -259,40 +282,69 @@ class CyberLiuren:
         return surf
 
     def create_heaven_plate(self, diameter):
+        """ 绘制圆形天盘：神将顺行，星宿逆行，完美对齐文物 """
         surf = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
         radius = diameter // 2
         mid = radius
         
-        # 底座
+        # 1. 基础结构
         pygame.draw.circle(surf, COLOR_HEAVEN_BG, (mid, mid), radius)
         pygame.draw.circle(surf, COLOR_DECO, (mid, mid), radius, 3)
-        r_divider = radius * 0.65
-        pygame.draw.circle(surf, COLOR_DECO, (mid, mid), r_divider, 2)
+        pygame.draw.circle(surf, COLOR_DECO, (mid, mid), radius * 0.68, 2)
 
-        # 中心北斗
-        star_points = [(0, -40), (15, -25), (30, -35), (45, -20), (65, 0), (85, 20), (100, 55)]
-        adj_points = [(x+mid-50, y+mid) for x,y in star_points]
-        pygame.draw.lines(surf, (150, 60, 60), False, adj_points, 3)
-        for pt in adj_points: pygame.draw.circle(surf, COLOR_NODE, pt, 4)
+        # 2. 北斗七星 (保持修正后的勺子形状)
+        scale = 0.8
+        star_coords = [
+            (20, -30), (20, 10), (-15, 15), (-15, -25), 
+            (-45, -35), (-70, -25), (-100, -50)
+        ]
+        screen_points = []
+        for x, y in star_coords:
+            # 旋转一点让它横置，更好看
+            rx = x * math.cos(0.2) - y * math.sin(0.2)
+            ry = x * math.sin(0.2) + y * math.cos(0.2)
+            screen_points.append((mid + rx * scale + 20, mid + ry * scale))
 
-        # 外圈：二十八宿 (天)
-        r_xiu = radius * 0.88
-        for i, char in enumerate(XIU_ALL):
-            angle_deg = 180 + i * (360 / 28) # 从左边开始排
-            rad = math.radians(angle_deg)
-            x = mid + r_xiu * math.cos(rad)
-            y = mid + r_xiu * math.sin(rad)
-            self.draw_rotated_text(surf, char, self.font_s, COLOR_TEXT_DIM, (x,y), -angle_deg - 90)
+        if len(screen_points) >= 2:
+            pygame.draw.lines(surf, (160, 60, 60), False, screen_points, 3)
+        pygame.draw.line(surf, (160, 60, 60), screen_points[0], screen_points[1], 3)
+        pygame.draw.line(surf, (160, 60, 60), screen_points[1], screen_points[2], 3)
+        for pt in screen_points:
+            pygame.draw.circle(surf, COLOR_NODE, pt, 5)
+            pygame.draw.circle(surf, (255, 255, 200), pt, 2)
 
-        # 内圈：十二月将 (神名) - 随天盘转动
-        r_gen = radius * 0.5
-        for i, name in enumerate(MOON_GENERALS):
-            # 这里的分布要和地盘对应，0号(神后)对应子位(下/90度)
-            angle_deg = 90 - i * 30 
+        # 3. 绘制内圈：十二月将 (顺时针)
+        # 参考图：神后在下，往左(顺时针)是大吉
+        r_gen = radius * 0.52
+        for i, gen_name in enumerate(MOON_GENERALS):
+            # 角度：90(下) -> 120(左下) -> 150... (Pygame坐标系中增加角度=顺时针/左移)
+            # 公式：90 + i * 30
+            angle_deg = 90 + i * 30
+            
             rad = math.radians(angle_deg)
             x = mid + r_gen * math.cos(rad)
             y = mid + r_gen * math.sin(rad)
-            self.draw_rotated_text(surf, name, self.font_m, COLOR_TEXT, (x,y), -angle_deg - 90)
+            
+            # 文字旋转：字头朝内
+            self.draw_rotated_text(surf, gen_name, self.font_m, COLOR_TEXT, (x, y), -angle_deg - 90)
+
+        # 4. 绘制外圈：二十八宿 (顺时针排布逆序列表)
+        # 参考图：底部正中是"虚"，往左(顺时针)是"女"
+        # 我们的 ORDERED_XIU_R 列表就是 ['虚', '女'...]
+        # 所以也是顺时针绘制即可
+        r_xiu = radius * 0.88
+        step_angle = 360 / 28
+        
+        for i, char in enumerate(ORDERED_XIU_R):
+            # 虚(i=0) 在正下(90度)
+            # 女(i=1) 在左边(90 + step)
+            angle_deg = 90 + i * step_angle
+            
+            rad = math.radians(angle_deg)
+            x = mid + r_xiu * math.cos(rad)
+            y = mid + r_xiu * math.sin(rad)
+            
+            self.draw_rotated_text(surf, char, self.font_s, COLOR_TEXT_DIM, (x, y), -angle_deg - 90)
 
         return surf
 
