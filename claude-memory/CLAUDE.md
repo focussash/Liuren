@@ -9,7 +9,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Follow the plan**: Always refer to `DEVELOPMENT_PLAN.md` before writing any code. The plan defines the implementation order and specifications.
 - **Plan changes require approval**: Even with auto-accept enabled, **you MUST ask the user for explicit permission** before modifying DEVELOPMENT_PLAN.md. Never silently iterate on the plan.
 - **Modularity is mandatory**: Avoid monolith code at all costs. Split functionality into small, focused modules. Each file should have a single responsibility.
-- **Progress tracking**: After completing any sub-step from the development plan, always update `achievements.md` with what was accomplished.
+
+### Progress Tracking (CRITICAL)
+
+- **After EVERY substep**: Update `achievements.md` immediately with what was accomplished. Do not wait until a full subproject is complete.
+- **Re-read claude-memory/ after every step**: Before starting any new work, re-read `DEVELOPMENT_PLAN.md` and `achievements.md` to ensure you are still aligned with the plan and aware of current progress.
+- **One subproject at a time**: Complete and validate one subproject before moving to the next. Stop after validation and wait for user confirmation before proceeding.
+- **Validation before proceeding**: After implementing a subproject, run tests and show results to the user. Do not proceed until validation passes.
+- **Document everything**: Include test counts, file changes, any deviations from the plan (e.g., using `cnlunar` instead of `sxtwl`), and any issues encountered.
 
 ## Project Overview
 

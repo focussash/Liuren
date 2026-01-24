@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(dir /s /b)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(pip install:*)",
+      "Bash(pip show:*)",
+      "Bash(python:*)",
+      "Bash(chcp 65001)"
     ]
   }
 }
