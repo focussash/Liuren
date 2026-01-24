@@ -1,264 +1,379 @@
 import pygame
 import math
 import sys
+import datetime
 
 # --- 🎨 赛博漆器配色 (Vibe Palette) ---
-COLOR_BG = (20, 20, 24)        # 深空灰背景
-COLOR_EARTH_BG = (60, 10, 10)  # 漆器红（朱砂）
-COLOR_HEAVEN_BG = (10, 10, 10) # 玄黑（天盘）
-COLOR_TEXT = (220, 180, 50)    # 流金（文字）
-COLOR_GRID = (100, 30, 30)     # 暗红（边框线）
+COLOR_BG = (20, 20, 24)         # 深空灰背景
+COLOR_EARTH_BG = (50, 15, 15)   # 深朱红漆底
+COLOR_HEAVEN_BG = (10, 10, 12)  # 玄黑天盘底
+COLOR_TEXT = (220, 190, 100)    # 流金（文字主色）
+COLOR_TEXT_DIM = (160, 130, 80) # 暗金（次要文字）
+COLOR_STEM = (200, 80, 80)      # 赤金（天干/特殊标识）
+COLOR_DECO = (140, 110, 60)     # 青铜/暗金（结构线）
+COLOR_NODE = (180, 150, 90)     # 亮金（节点/铆钉）
+COLOR_HIGHLIGHT = (255, 255, 200) # 高亮色
 
-WINDOW_SIZE = (800, 800)
+WINDOW_SIZE = (900, 900)
 FPS = 60
 
-# 十二地支 (用于显示)
+# --- 数据常量 ---
+# 二十八宿 (按方位，顺序调整为顺时针连续)
+XIU_S = ['轸', '翼', '张', '星', '柳', '鬼', '井'] # 南(上) 左->右
+XIU_W = ['参', '觜', '毕', '昴', '胃', '娄', '奎'] # 西(右) 上->下
+XIU_N = ['壁', '室', '危', '虚', '女', '牛', '斗'] # 北(下) 右->左
+XIU_E = ['箕', '尾', '心', '房', '氐', '亢', '角'] # 东(左) 下->上
+# 合并为一个完整列表用于天盘 (逆时针排布在天盘上，或顺时针，视具体流派，此处参考图示为顺时针)
+XIU_ALL = XIU_E[::-1] + XIU_S + XIU_W + XIU_N[::-1] 
+
+# 十二月将神名 (子->亥) 
+# 注意：在六壬中，神后(子)对应正北，但在天盘上随月将移动
+MOON_GENERALS = ['神后', '大吉', '功曹', '太冲', '天罡', '太乙', '胜光', '小吉', '传送', '从魁', '河魁', '登明']
+# 十二地支 (方位：子在北/下，午在南/上)
 EARTHLY_BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
+# 天干
+HEAVENLY_STEMS = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
 
-# --- 新增配置：月将神名 (对应 子, 丑, 寅... 亥) ---
-# 注意：列表顺序必须对应 子 -> 亥
-MOON_GENERALS = [
-    '神后', '大吉', '功曹', '太冲', '天罡', '太乙', 
-    '胜光', '小吉', '传送', '从魁', '河魁', '登明'
-]
+# 节气映射 (简化版：月份 -> 月将索引)
+# 实际上月将是太阳过宫，中气换将。这里做简化处理：
+# 1月(丑月-大吉), 2月(寅月-功曹)... 实际上月将 = 合流月建 (正月建寅, 月将为亥-登明)
+# 简单对照表 (大致)：
+# 正月(寅)-亥将(登明), 二月(卯)-戌将(河魁), ...
+# 索引 11, 10, ...
+SOLAR_TERMS_MAP = {
+    1: 11, 2: 10, 3: 9, 4: 8, 5: 7, 6: 6, 
+    7: 5, 8: 4, 9: 3, 10: 2, 11: 1, 12: 0
+}
 
-# --- 新增数据：二十八星宿 (按方位分组) ---
-# 顺序：上(南), 右(西), 下(北), 左(东) -> 顺时针排列
-# 注意：古代排盘有时是逆时针，但为了视觉对齐，我们按屏幕坐标系逻辑来
-# 1. 南方 (上边 Top): 从左(东) -> 右(西) 绘制
-# 顺序：轸 -> 井 (为了让左边的'轸'衔接左侧的'角'，右边的'井'衔接右侧的'参')
-XIU_SOUTH = ['轸', '翼', '张', '星', '柳', '鬼', '井'] 
+# --- 🧠 六壬核心算法 (The Brain) ---
 
-# 2. 西方 (右边 Right): 从上(南) -> 下(北) 绘制
-# 顺序：参 -> 奎 (为了让上边的'参'衔接上侧的'井'，下边的'奎'衔接底部的'壁')
-XIU_WEST = ['参', '觜', '毕', '昴', '胃', '娄', '奎']
+def get_chinese_hour(dt):
+    """ 获取当前时辰的地支索引 (0=子, 1=丑...) """
+    h = dt.hour
+    # 23:00-01:00 是子时
+    if h >= 23 or h < 1: return 0
+    return (h + 1) // 2
 
-# 3. 北方 (下边 Bottom): 从左(东) -> 右(西) 绘制
-# 顺序：斗 -> 壁 (为了让左边的'斗'衔接左侧的'箕')
-XIU_NORTH = ['斗', '牛', '女', '虚', '危', '室', '壁']
+def get_moon_general(dt):
+    """ 获取当前月将索引 (简化版：基于月份) """
+    # 真正的排盘需要查万年历看是否过了中气，这里用月份粗略模拟
+    # 假设当前是农历/节气月大致对应公历
+    # 比如 1月(小寒-大寒) -> 丑月 -> 月将为子(神后, idx 0)
+    # 这里使用一个简单的月份偏移，实际应用建议接入万年历库
+    m = dt.month
+    # 修正映射：1月->子将(0), 2月->亥将(11)... 这是一个循环偏移
+    # 简单写一个偏移量让它动起来即可
+    idx = (13 - m) % 12 
+    return idx
 
-# 4. 东方 (左边 Left): 从上(南) -> 下(北) 绘制
-# 顺序：角 -> 箕 (为了让上边的'角'衔接顶部的'轸')
-XIU_EAST = ['角', '亢', '氐', '房', '心', '尾', '箕']
+# --- 🖥️ 渲染引擎 ---
 
 class CyberLiuren:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode(WINDOW_SIZE)
-        pygame.display.set_caption("赛博六壬 Cyber-Liuren v0.2")
+        pygame.display.set_caption("赛博大六壬 - 汝阴侯漆器复原版 [按空格自动归位]")
         self.clock = pygame.time.Clock()
 
-        # --- 字体设置 ---
-        # 尝试加载系统中的中文字体 (Windows通常有SimHei, Mac有PingFang)
-        self.font_size = 32
-        try:
-            # Windows 优先尝试黑体
-            self.font = pygame.font.SysFont("simhei", self.font_size, bold=True)
-        except:
-            # 如果失败，回退到默认（中文会显示乱码，需要你自己指定字体路径）
-            self.font = pygame.font.Font(None, self.font_size)
+        # --- 字体加载 (带回退) ---
+        self.font_size_l = 28
+        self.font_size_m = 22
+        self.font_size_s = 18
+        
+        # 尝试加载中文字体列表
+        font_names = ["simhei", "microsoftyahei", "pingfangsc", "notosanscjksc", "simsun"]
+        self.font_l = self.font_m = self.font_s = None
+        
+        for name in font_names:
+            try:
+                self.font_l = pygame.font.SysFont(name, self.font_size_l, bold=True)
+                self.font_m = pygame.font.SysFont(name, self.font_size_m, bold=True)
+                self.font_s = pygame.font.SysFont(name, self.font_size_s, bold=True)
+                self.hud_font = pygame.font.SysFont(name, 20)
+                print(f"Loaded font: {name}")
+                break
+            except:
+                continue
+        
+        if not self.font_l:
+            print("Warning: No Chinese font found. Text may handle incorrectly.")
+            self.font_l = pygame.font.Font(None, 24)
 
-        # --- 生成盘面素材 ---
+        # --- 尺寸参数 ---
         self.center = (WINDOW_SIZE[0] // 2, WINDOW_SIZE[1] // 2)
+        self.earth_size = 760
+        self.heaven_diameter = 460
         
-        # 1. 生成地盘 (静止的方形)
-        self.earth_surf = self.create_earth_plate(600)
+        # 预渲染盘面 (静态纹理)
+        self.earth_surf = self.create_earth_plate(self.earth_size, self.heaven_diameter)
+        self.heaven_surf = self.create_heaven_plate(self.heaven_diameter)
+
+        # --- 物理与状态 ---
+        self.angle = 0.0          # 当前天盘角度
+        self.velocity = 0.0       # 角速度
+        self.dragging = False     # 是否正在拖拽
+        self.last_mouse_pos = (0, 0)
+        self.friction = 0.95      # 阻尼系数 (漆器手感)
         
-        # 2. 生成天盘 (旋转的圆形)
-        self.heaven_surf = self.create_heaven_plate(320)
+        # 自动排盘目标
+        self.target_angle = None
+        self.animation_speed = 0.2
 
-        # 状态变量
-        self.angle = 0
-        self.target_angle = 0
-        self.dragging = False
+    def get_mouse_angle(self, pos):
+        """ 计算鼠标相对于中心的角度 (degrees) """
+        dx = pos[0] - self.center[0]
+        dy = pos[1] - self.center[1]
+        return math.degrees(math.atan2(dy, dx))
 
-    def create_earth_plate(self, size):
-        """ 绘制方形地盘：增加二十八星宿外圈 """
+    def align_to_now(self):
+        """ 核心功能：月将加时 (天盘月将 指向 地盘时辰) """
+        now = datetime.datetime.now()
+        hour_idx = get_chinese_hour(now)      # 地盘时辰位置 (0=子=下)
+        general_idx = get_moon_general(now)   # 当前月将索引
+        
+        print(f"Time: {now.hour}点 (地支{EARTHLY_BRANCHES[hour_idx]})")
+        print(f"General: {MOON_GENERALS[general_idx]}")
+
+        # 计算目标角度
+        # 1. 地盘 '子' 在正下方 (90度 / 270度视坐标系而定)
+        #    根据 draw_row 逻辑，地盘的'子'是在下边框中间。
+        #    在Pygame屏幕坐标中，正下是 90度 (假设0度是正右)，或者 270度。
+        #    让我们看 create_earth_plate 的排布：
+        #    draw_row(['丑','癸','子','壬','亥']...) -> 子在下方正中。
+        
+        # 2. 天盘 '月将' 在哪里？
+        #    create_heaven_plate 中，MOON_GENERALS[0] (神后/子) 画在 90度 (正下)。
+        #    所以初始状态下，天盘的子(神后) 对准 地盘的子。
+        
+        # 3. 目标：要把 general_idx (月将) 对准 hour_idx (时辰)。
+        #    地盘时辰位置角度：
+        #    子(0): 90度 (下)
+        #    丑(1): 60度 (右下) ... (逆时针排布)
+        #    公式：target_pos_angle = 90 - hour_idx * 30
+        
+        #    天盘月将初始角度：
+        #    gen(0): 90度
+        #    gen(1): 60度 ...
+        #    公式：current_gen_angle = 90 - general_idx * 30
+        
+        #    我们需要旋转天盘 R 度，使得：
+        #    current_gen_angle + R = target_pos_angle
+        #    R = target_pos_angle - current_gen_angle
+        #      = (90 - h*30) - (90 - g*30)
+        #      = (g - h) * 30
+        
+        diff = (general_idx - hour_idx) * 30
+        self.target_angle = diff 
+        # 处理一下旋转圈数，走最短路径
+        current_mod = self.angle % 360
+        target_mod = self.target_angle % 360
+        delta = target_mod - current_mod
+        if delta > 180: delta -= 360
+        if delta < -180: delta += 360
+        self.target_angle = self.angle + delta
+
+    def draw_rotated_text(self, surf, text, font, color, center, angle_deg):
+        txt_surf = font.render(text, True, color)
+        rotated_txt = pygame.transform.rotate(txt_surf, angle_deg)
+        rect = rotated_txt.get_rect(center=center)
+        surf.blit(rotated_txt, rect)
+
+    def create_earth_plate(self, size, inner_dia):
         surf = pygame.Surface((size, size), pygame.SRCALPHA)
         
-        # 1. 绘制底座 (朱红漆器质感)
+        # 1. 底色
         rect = pygame.Rect(0, 0, size, size)
-        pygame.draw.rect(surf, COLOR_EARTH_BG, rect, border_radius=15)
-        pygame.draw.rect(surf, COLOR_GRID, rect, 3, border_radius=15) # 外框金边
-        
-        # 内部再画一个框，区分 星宿层 和 地支层
-        inner_margin = 60
-        inner_rect = pygame.Rect(inner_margin, inner_margin, size-inner_margin*2, size-inner_margin*2)
-        pygame.draw.rect(surf, COLOR_GRID, inner_rect, 2, border_radius=10)
+        pygame.draw.rect(surf, COLOR_EARTH_BG, rect, border_radius=10)
 
-        # 2. 绘制二十八星宿 (最外圈)
-        # 我们使用较小的字体，因为字多
-        xiu_font = pygame.font.SysFont("simhei", 20, bold=True)
+        # 关键尺寸
+        m_xiu = 35; m_mid = 120
+        r_inner = inner_dia // 2 + 5
+        mid = size // 2
+
+        # 2. 结构线
+        lw = 4
+        pygame.draw.rect(surf, COLOR_DECO, (m_xiu, m_xiu, size-m_xiu*2, size-m_xiu*2), lw, border_radius=5)
+        pygame.draw.rect(surf, COLOR_DECO, (m_mid, m_mid, size-m_mid*2, size-m_mid*2), lw, border_radius=5)
+        pygame.draw.circle(surf, COLOR_DECO, (mid, mid), r_inner, lw)
         
-        def draw_side_text(char_list, side):
-            """ 辅助函数：绘制带旋转的边框文字 """
+        # 连线 (中框角 -> 内圆)
+        corners_mid = [(m_mid, m_mid), (size-m_mid, m_mid), (size-m_mid, size-m_mid), (m_mid, size-m_mid)]
+        angles = [225, 315, 45, 135] 
+        for i, ang in enumerate(angles):
+            rad = math.radians(ang)
+            end_pt = (mid + r_inner*math.cos(rad), mid + r_inner*math.sin(rad))
+            pygame.draw.line(surf, COLOR_DECO, corners_mid[i], end_pt, lw)
+
+        # 节点
+        node_r = 14
+        nodes = corners_mid + [(mid, m_mid), (size-m_mid, mid), (mid, size-m_mid), (m_mid, mid)]
+        for pt in nodes:
+            pygame.draw.circle(surf, COLOR_EARTH_BG, pt, node_r)
+            pygame.draw.circle(surf, COLOR_NODE, pt, node_r, 2)
+            pygame.draw.circle(surf, COLOR_NODE, pt, 4)
+
+        # 3. 文字 - 外圈二十八宿
+        def draw_side_xiu(char_list, side):
             step = size / 8
             for i, char in enumerate(char_list):
-                # 1. 确定位置和基础角度
-                if side == 0:   # 上 (南)
-                    x, y = step * (i + 1), 30
-                    angle = 180 # 字头朝下(朝圆心)
-                elif side == 1: # 右 (西)
-                    x, y = size - 30, step * (i + 1)
-                    angle = 90  # 字头朝左(朝圆心)
-                elif side == 2: # 下 (北)
-                    x, y = step * (i + 1), size - 30
-                    angle = 0   # 字头朝上(朝圆心)
-                elif side == 3: # 左 (东)
-                    x, y = 30, step * (i + 1)
-                    angle = -90 # 字头朝右(朝圆心)
-                
-                # 2. 渲染并旋转
-                text = xiu_font.render(char, True, (160, 140, 120)) # 暗金
-                rotated_text = pygame.transform.rotate(text, angle)
-                text_rect = rotated_text.get_rect(center=(x, y))
-                surf.blit(rotated_text, text_rect)
-
-        # 绘制四边
-        draw_side_text(XIU_SOUTH, 0) # 上
-        draw_side_text(XIU_WEST, 1)  # 右
-        draw_side_text(XIU_NORTH, 2) # 下
-        draw_side_text(XIU_EAST, 3)  # 左
-
-        # 3. 绘制十二地支 (内圈) - 之前的逻辑稍微调整位置
-        # 映射字典 {地支: (x_ratio, y_ratio)}
-        # 因为加了星宿，地支要往里缩一点
-        positions = {
-            '巳': (0.32, 0.18), '午': (0.5, 0.18), '未': (0.68, 0.18), # 上
-            '申': (0.82, 0.32), '酉': (0.82, 0.5), '戌': (0.82, 0.68), # 右
-            '亥': (0.68, 0.82), '子': (0.5, 0.82), '丑': (0.32, 0.82), # 下
-            '寅': (0.18, 0.68), '卯': (0.18, 0.5), '辰': (0.18, 0.32)  # 左
-        }
-
-        for char, (rx, ry) in positions.items():
-            # 地支字体大一点，亮一点
-            text = self.font.render(char, True, COLOR_TEXT)
-            text_rect = text.get_rect(center=(size * rx, size * ry))
-            surf.blit(text, text_rect)
-            
-            # 格子框
-            box_size = 45
-            pygame.draw.rect(surf, COLOR_GRID, 
-                           (size*rx - box_size/2, size*ry - box_size/2, box_size, box_size), 1)
-
-        # 4. 补充四角文字 (严格对应六壬方位：上南下北，左东右西)
-        # 修正逻辑：
-        # 右下(NW) = 天门 (戌亥)
-        # 左上(SE) = 地户 (辰巳)
-        # 右上(SW) = 人门 (未申)
-        # 左下(NE) = 鬼门 (丑寅)
+                angle = [180, 90, 0, -90][side]
+                margin = 18
+                if side==0: x,y = step*(i+1), margin
+                elif side==1: x,y = size-margin, step*(i+1)
+                elif side==2: x,y = size-step*(i+1), size-margin
+                elif side==3: x,y = margin, size-step*(i+1)
+                self.draw_rotated_text(surf, char, self.font_m, COLOR_TEXT_DIM, (x,y), angle)
         
-        corners = {
-            '天': (0.88, 0.88), # 右下 (西北)
-            '地': (0.12, 0.12), # 左上 (东南)
-            '人': (0.88, 0.12), # 右上 (西南)
-            '鬼': (0.12, 0.88)  # 左下 (东北)
-        }
-        
-        for char, (rx, ry) in corners.items():
-            # 用一种篆刻风格的暗红色，或者深灰色
-            text = self.font.render(char, True, (80, 40, 40)) 
-            surf.blit(text, text.get_rect(center=(size*rx, size*ry)))
-        for char, (rx, ry) in corners.items():
-            text = self.font.render(char, True, (100, 50, 50)) # 暗色装饰
-            surf.blit(text, text.get_rect(center=(size*rx, size*ry)))
+        draw_side_xiu(XIU_S, 0); draw_side_xiu(XIU_W, 1)
+        draw_side_xiu(XIU_N[::-1], 2); draw_side_xiu(XIU_E[::-1], 3)
 
+        # 4. 文字 - 中层干支 (地盘核心)
+        def draw_row(chars, p1, p2):
+            count = len(chars)
+            for i, char in enumerate(chars):
+                t = (i + 1) / (count + 1)
+                cx = p1[0] + (p2[0] - p1[0]) * t
+                cy = p1[1] + (p2[1] - p1[1]) * t
+                color = COLOR_STEM if char in HEAVENLY_STEMS else COLOR_TEXT
+                font = self.font_l if char in ['子','午','卯','酉'] else self.font_m
+                dx, dy = cx - mid, cy - mid
+                angle = math.degrees(math.atan2(dy, dx)) + 90
+                self.draw_rotated_text(surf, char, font, color, (cx, cy), -angle)
+
+        m_row = (m_xiu + m_mid) / 2
+        draw_row(['巳','丙','午','丁','未'], (m_mid, m_row), (size-m_mid, m_row))
+        draw_row(['申','庚','酉','辛','戌'], (size-m_row, m_mid), (size-m_row, size-m_mid))
+        draw_row(['丑','癸','子','壬','亥'], (size-m_mid, size-m_row), (m_mid, size-m_row))
+        draw_row(['辰','乙','卯','甲','寅'], (m_row, size-m_mid), (m_row, m_mid))
+
+        # 5. 文字 - 四隅卦
+        corner_offset = m_mid + 30
+        corners_data = [('巽',(corner_offset, corner_offset)), ('坤',(size-corner_offset, corner_offset)),
+                        ('乾',(size-corner_offset, size-corner_offset)), ('艮',(corner_offset, size-corner_offset))]
+        for char, pos in corners_data:
+            dx, dy = pos[0] - mid, pos[1] - mid
+            angle = math.degrees(math.atan2(dy, dx)) + 90
+            self.draw_rotated_text(surf, char, self.font_l, COLOR_TEXT_DIM, pos, -angle)
+
+        # 修正：地盘不需要绘制内圈神名，那是天盘的事
         return surf
 
     def create_heaven_plate(self, diameter):
-        """ 绘制圆形天盘：使用月将神名 """
         surf = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
         radius = diameter // 2
+        mid = radius
         
-        # 绘制圆盘 (玄黑底色)
-        pygame.draw.circle(surf, COLOR_HEAVEN_BG, (radius, radius), radius)
-        pygame.draw.circle(surf, COLOR_TEXT, (radius, radius), radius, 2) # 金圈
+        # 底座
+        pygame.draw.circle(surf, COLOR_HEAVEN_BG, (mid, mid), radius)
+        pygame.draw.circle(surf, COLOR_DECO, (mid, mid), radius, 3)
+        r_divider = radius * 0.65
+        pygame.draw.circle(surf, COLOR_DECO, (mid, mid), r_divider, 2)
 
-        # --- 🔧 新增：定义天盘专属小字体 ---
-        # 原来是 self.font (32号)，这里改成 22号 或 20号
-        # 如果你觉得还是大，就继续把 22 改小
-        heaven_font = pygame.font.SysFont("simhei", 22, bold=True)
-        
-        # 绘制北斗七星意象 (这次我们画稍微像一点)
-        # 简单的北斗七星连线坐标 (示意)
-        star_points = [
-            (0, -50), (20, -30), (40, -40), (60, -20), # 斗身
-            (80, 0), (100, 20), (120, 60)              # 斗柄
-        ]
-        # 将坐标平移到圆心
-        adjusted_points = [(x + radius - 60, y + radius) for x, y in star_points]
-        pygame.draw.lines(surf, (160, 40, 40), False, adjusted_points, 4) # 线条宽度设为 4
-        for pt in adjusted_points:
-            pygame.draw.circle(surf, (220, 180, 50), pt, 5) # 星星点大一点
+        # 中心北斗
+        star_points = [(0, -40), (15, -25), (30, -35), (45, -20), (65, 0), (85, 20), (100, 55)]
+        adj_points = [(x+mid-50, y+mid) for x,y in star_points]
+        pygame.draw.lines(surf, (150, 60, 60), False, adj_points, 3)
+        for pt in adj_points: pygame.draw.circle(surf, COLOR_NODE, pt, 4)
 
+        # 外圈：二十八宿 (天)
+        r_xiu = radius * 0.88
+        for i, char in enumerate(XIU_ALL):
+            angle_deg = 180 + i * (360 / 28) # 从左边开始排
+            rad = math.radians(angle_deg)
+            x = mid + r_xiu * math.cos(rad)
+            y = mid + r_xiu * math.sin(rad)
+            self.draw_rotated_text(surf, char, self.font_s, COLOR_TEXT_DIM, (x,y), -angle_deg - 90)
+
+        # 内圈：十二月将 (神名) - 随天盘转动
+        r_gen = radius * 0.5
         for i, name in enumerate(MOON_GENERALS):
-            angle_deg = i * 30 + 90 
-            angle_rad = math.radians(angle_deg)
-            
-            # 半径微调：因为字变小了，可以稍微离圆心远一丢丢，或者保持不变
-            dist = radius * 0.80 
-            x = radius + dist * math.cos(angle_rad)
-            y = radius + dist * math.sin(angle_rad)
-            
-            # --- 🔧 修改：使用 heaven_font 渲染 ---
-            text = heaven_font.render(name, True, COLOR_TEXT)
-            
-            # 旋转文字
-            rotated_text = pygame.transform.rotate(text, -angle_deg - 90)
-            
-            text_rect = rotated_text.get_rect(center=(x, y))
-            surf.blit(rotated_text, text_rect)
+            # 这里的分布要和地盘对应，0号(神后)对应子位(下/90度)
+            angle_deg = 90 - i * 30 
+            rad = math.radians(angle_deg)
+            x = mid + r_gen * math.cos(rad)
+            y = mid + r_gen * math.sin(rad)
+            self.draw_rotated_text(surf, name, self.font_m, COLOR_TEXT, (x,y), -angle_deg - 90)
 
         return surf
 
-    def get_angle_from_mouse(self):
-        mx, my = pygame.mouse.get_pos()
-        dx = mx - self.center[0]
-        dy = my - self.center[1]
-        return math.degrees(math.atan2(-dy, dx)) - 90
-
     def run(self):
         running = True
-        last_mouse_angle = 0
-        
         while running:
+            # --- 1. 事件处理 ---
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    mx, my = pygame.mouse.get_pos()
-                    if math.hypot(mx - self.center[0], my - self.center[1]) < 210:
-                        self.dragging = True
-                        last_mouse_angle = self.get_angle_from_mouse()
+                    if event.button == 1:
+                        # 检查是否点中天盘区域
+                        dist = math.hypot(event.pos[0]-self.center[0], event.pos[1]-self.center[1])
+                        if dist < self.heaven_diameter / 2:
+                            self.dragging = True
+                            self.velocity = 0 # 拖拽时清除惯性
+                            self.target_angle = None # 打断自动旋转
+                
                 elif event.type == pygame.MOUSEBUTTONUP:
-                    self.dragging = False
-                    # 磁吸逻辑 (1格=30度)
-                    self.target_angle = round(self.angle / 30) * 30
-            
-            if self.dragging:
-                curr = self.get_angle_from_mouse()
-                self.angle += (curr - last_mouse_angle)
-                self.target_angle = self.angle
-                last_mouse_angle = curr
-            else:
-                # 阻尼回弹
-                self.angle += (self.target_angle - self.angle) * 0.15
+                    if event.button == 1:
+                        self.dragging = False
 
-            # 渲染
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        self.align_to_now()
+
+            # --- 2. 物理逻辑 ---
+            if self.dragging:
+                mouse_pos = pygame.mouse.get_pos()
+                current_mouse_angle = self.get_mouse_angle(mouse_pos)
+                if self.last_mouse_pos != (0,0):
+                    last_mouse_angle = self.get_mouse_angle(self.last_mouse_pos)
+                    # 处理跨越 180/-180 度的情况
+                    delta = current_mouse_angle - last_mouse_angle
+                    if delta > 180: delta -= 360
+                    if delta < -180: delta += 360
+                    self.angle -= delta # 逆向跟随
+                    self.velocity = -delta # 记录速度用于惯性
+                self.last_mouse_pos = mouse_pos
+            else:
+                self.last_mouse_pos = (0,0)
+                
+                # 自动归位逻辑
+                if self.target_angle is not None:
+                    diff = self.target_angle - self.angle
+                    if abs(diff) < 0.1:
+                        self.angle = self.target_angle
+                        self.target_angle = None
+                        self.velocity = 0
+                    else:
+                        self.angle += diff * self.animation_speed
+                else:
+                    # 惯性阻尼
+                    self.angle += self.velocity
+                    self.velocity *= self.friction
+                    if abs(self.velocity) < 0.01: self.velocity = 0
+
+            # --- 3. 渲染绘制 ---
             self.screen.fill(COLOR_BG)
-            
-            # 绘制地盘 (不动)
+
+            # A. 绘制地盘 (不动)
             earth_rect = self.earth_surf.get_rect(center=self.center)
             self.screen.blit(self.earth_surf, earth_rect)
-            
-            # 绘制天盘 (旋转)
+
+            # B. 绘制天盘 (旋转)
+            # Pygame旋转是逆时针为正，但我们需要符合直觉
             rotated_heaven = pygame.transform.rotate(self.heaven_surf, self.angle)
             heaven_rect = rotated_heaven.get_rect(center=self.center)
             self.screen.blit(rotated_heaven, heaven_rect)
 
+            # C. HUD 信息
+            now = datetime.datetime.now()
+            info_text = f"DATE: {now.strftime('%Y-%m-%d %H:%M')} | SPACE: Auto Align"
+            hud = self.hud_font.render(info_text, True, COLOR_TEXT_DIM)
+            self.screen.blit(hud, (20, WINDOW_SIZE[1] - 40))
+
             pygame.display.flip()
             self.clock.tick(FPS)
-
+        
         pygame.quit()
         sys.exit()
 
