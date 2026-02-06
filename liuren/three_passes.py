@@ -1,13 +1,14 @@
 # liuren/three_passes.py
 # 三传计算模块
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from config import (
     STEM_WUXING, BRANCH_WUXING, WUXING_KE,
     STEM_YINYANG, BRANCH_YINYANG,
     STEM_JIGONG, BRANCH_CHONG, BRANCH_YIMA
 )
 from liuren.plate import LiurenPlate, Lesson, Pass, get_heaven_branch
+from liuren.generals import get_general_for_heaven_branch
 
 # 地支列表
 EARTHLY_BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
@@ -438,7 +439,8 @@ def get_fanyin_pass(plate: LiurenPlate) -> Tuple[str, str]:
 # 子项目9：中末传计算
 # ============================================================
 
-def calculate_standard_passes(initial: str, heaven_plate: dict) -> List[Pass]:
+def calculate_standard_passes(initial: str, heaven_plate: dict,
+                              generals_plate: Dict[str, str] = None) -> List[Pass]:
     """
     标准三传计算
 
@@ -448,6 +450,7 @@ def calculate_standard_passes(initial: str, heaven_plate: dict) -> List[Pass]:
     Args:
         initial: 初传地支
         heaven_plate: 天地盘映射
+        generals_plate: 天将盘（可选）
 
     Returns:
         三传列表
@@ -455,10 +458,15 @@ def calculate_standard_passes(initial: str, heaven_plate: dict) -> List[Pass]:
     middle = get_heaven_branch(heaven_plate, initial)
     final = get_heaven_branch(heaven_plate, middle)
 
+    def get_general(branch: str) -> str:
+        if generals_plate:
+            return get_general_for_heaven_branch(generals_plate, branch)
+        return ""
+
     return [
-        Pass(branch=initial, index=1),
-        Pass(branch=middle, index=2),
-        Pass(branch=final, index=3)
+        Pass(branch=initial, index=1, general=get_general(initial)),
+        Pass(branch=middle, index=2, general=get_general(middle)),
+        Pass(branch=final, index=3, general=get_general(final))
     ]
 
 
@@ -477,10 +485,15 @@ def calculate_fuyin_passes(plate: LiurenPlate, lessons: List[Lesson]) -> Tuple[L
     middle = get_heaven_branch(plate.heaven_plate, initial)
     final = get_heaven_branch(plate.heaven_plate, middle)
 
+    def get_general(branch: str) -> str:
+        if plate.generals_plate:
+            return get_general_for_heaven_branch(plate.generals_plate, branch)
+        return ""
+
     passes = [
-        Pass(branch=initial, index=1),
-        Pass(branch=middle, index=2),
-        Pass(branch=final, index=3)
+        Pass(branch=initial, index=1, general=get_general(initial)),
+        Pass(branch=middle, index=2, general=get_general(middle)),
+        Pass(branch=final, index=3, general=get_general(final))
     ]
 
     return passes, lesson_type
@@ -498,10 +511,15 @@ def calculate_fanyin_passes(plate: LiurenPlate) -> Tuple[List[Pass], str]:
     middle = BRANCH_CHONG[initial]
     final = initial
 
+    def get_general(branch: str) -> str:
+        if plate.generals_plate:
+            return get_general_for_heaven_branch(plate.generals_plate, branch)
+        return ""
+
     passes = [
-        Pass(branch=initial, index=1),
-        Pass(branch=middle, index=2),
-        Pass(branch=final, index=3)
+        Pass(branch=initial, index=1, general=get_general(initial)),
+        Pass(branch=middle, index=2, general=get_general(middle)),
+        Pass(branch=final, index=3, general=get_general(final))
     ]
 
     return passes, lesson_type
@@ -558,7 +576,7 @@ def calculate_three_passes(plate: LiurenPlate, lessons: List[Lesson]) -> Tuple[L
         log("判断八专: 日干寄宫等于日支，为八专课")
         initial, lesson_type = get_bazhuan_pass(plate, lessons)
         log(f"初传取: {initial}")
-        passes = calculate_standard_passes(initial, plate.heaven_plate)
+        passes = calculate_standard_passes(initial, plate.heaven_plate, plate.generals_plate)
         log(f"课体: {lesson_type}")
         log(f"三传: 初传{passes[0].branch} → 中传{passes[1].branch} → 末传{passes[2].branch}")
         return passes, lesson_type
@@ -578,7 +596,7 @@ def calculate_three_passes(plate: LiurenPlate, lessons: List[Lesson]) -> Tuple[L
         elif lesson_type == '知一':
             log("比用后仍有多个，涉害法取涉害最深者 -> 知一课")
         log(f"初传: {initial}")
-        passes = calculate_standard_passes(initial, plate.heaven_plate)
+        passes = calculate_standard_passes(initial, plate.heaven_plate, plate.generals_plate)
         log(f"三传: 初传{passes[0].branch} → 中传{passes[1].branch} → 末传{passes[2].branch}")
         return passes, lesson_type
 
@@ -589,7 +607,7 @@ def calculate_three_passes(plate: LiurenPlate, lessons: List[Lesson]) -> Tuple[L
         log("日干阴阳与时支阴阳相反，用别责法")
         initial, lesson_type = get_bieze_pass(plate)
         log(f"取日干寄宫{STEM_JIGONG[plate.day_stem]}上神为初传: {initial}")
-        passes = calculate_standard_passes(initial, plate.heaven_plate)
+        passes = calculate_standard_passes(initial, plate.heaven_plate, plate.generals_plate)
         log(f"课体: {lesson_type}")
         log(f"三传: 初传{passes[0].branch} → 中传{passes[1].branch} → 末传{passes[2].branch}")
         return passes, lesson_type
@@ -599,7 +617,7 @@ def calculate_three_passes(plate: LiurenPlate, lessons: List[Lesson]) -> Tuple[L
     if initial:
         log(f"遥克法: 找天盘克日干者 -> {lesson_type}课")
         log(f"初传: {initial}")
-        passes = calculate_standard_passes(initial, plate.heaven_plate)
+        passes = calculate_standard_passes(initial, plate.heaven_plate, plate.generals_plate)
         log(f"三传: 初传{passes[0].branch} → 中传{passes[1].branch} → 末传{passes[2].branch}")
         return passes, lesson_type
 
@@ -607,7 +625,7 @@ def calculate_three_passes(plate: LiurenPlate, lessons: List[Lesson]) -> Tuple[L
     log("无遥克，使用昴星法")
     initial, lesson_type = get_maoxing_pass(plate)
     log(f"初传: {initial}")
-    passes = calculate_standard_passes(initial, plate.heaven_plate)
+    passes = calculate_standard_passes(initial, plate.heaven_plate, plate.generals_plate)
     log(f"课体: {lesson_type}")
     log(f"三传: 初传{passes[0].branch} → 中传{passes[1].branch} → 末传{passes[2].branch}")
     return passes, lesson_type

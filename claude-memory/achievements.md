@@ -125,16 +125,65 @@ Progress tracking for 赛博大六壬 四课三传系统
 
 ---
 
+## Completed (continued)
+
+### Subproject 13-14: Main Program Integration & Export
+- Integrated all components into `main.py`
+- Export functionality with screenshot (F5) and text export (F6)
+
+### Subproject 15: 天将计算系统
+- Extended `liuren/constants.py`:
+  - `STEM_GUIREN`: 天干贵人表（阳贵/阴贵地支）
+  - `GENERAL_ORDER`: 十二天将顺序
+  - Fixed 癸的阳贵/阴贵：阳贵巳，阴贵卯（与壬相反，源自"壬蛇癸兔"口诀）
+- Created `liuren/generals.py`:
+  - `is_daytime()`: 昼夜判断（卯-申为昼）
+  - `get_guiren_branch()`: 获取贵人所临地支
+  - `build_generals_plate()`: 构建天将盘
+    - 顺逆规则：贵人临亥子丑寅卯辰→顺布，临巳午未申酉戌→逆布
+  - `get_general_for_heaven_branch()`: 获取天盘地支对应天将
+- Extended data classes (`liuren/plate.py`):
+  - `Lesson.general`: 四课天将
+  - `Pass.general`: 三传天将
+  - `LiurenPlate.generals_plate`: 天将盘
+  - `LiurenPlate.guiren_branch`: 贵人所临地支
+- Updated `liuren/four_lessons.py`: 计算四课时填充天将
+- Updated `liuren/three_passes.py`: 计算三传时填充天将
+
+### Subproject 16: 天将可视化与动画
+- Added to `main.py`:
+  - `draw_generals()`: 在天盘内圈绘制天将（跟随旋转）
+  - `start_generals_animation()` / `update_generals_animation()`: 布将动画
+  - 贵人用金色高亮，其他天将用暗红色
+- Updated `ui/sidebar.py`:
+  - 四课显示增加天将行
+  - 三传显示增加天将行
+  - 盘局信息显示"贵人：X宫"
+
+### Subproject 17: 空格键行为修复
+- 已排盘时：对齐到排盘时的时支（而非当前时间）
+- 未排盘时：自动排盘
+
+### Subproject 18: 按钮优化
+- "自动"→"当前"：只填充干支不排盘
+- 新增"即时起卦"按钮：一键用当前时间排盘
+
+### Subproject 19: 输入面板位置优化
+- 输入面板从左上角(20,20)移至右下角(530,650)
+- 下拉选择器支持向上展开（`open_upward`参数）
+- 避免遮挡盘体中心区域，界面更美观
+
+---
+
 ## In Progress
 
-_(None - proceeding to Subproject 13)_
+_(None)_
 
 ---
 
 ## Pending
 
-- Subproject 13: Main Program Integration
-- Subproject 14: Export Functionality
+_(None - core features complete)_
 
 ---
 
@@ -149,3 +198,8 @@ _(None - proceeding to Subproject 13)_
 | 2025-01-24 | 5 | Four lessons | 9 tests passed |
 | 2025-01-24 | 6-9 | Three passes | 27 tests passed, all 10 course types |
 | 2025-01-24 | 10-12 | UI Components | 15 tests passed, input panel, highlighter, sidebar |
+| 2026-02-05 | 15-18 | 天将系统 | 天将计算、可视化、布将动画、贵人高亮、空格键修复、按钮优化 |
+| 2026-02-05 | Bug fix | 天将布法 | 修正癸阳贵/阴贵、顺逆根据贵人位置决定 |
+| 2026-02-06 | 19 | UI优化 | 输入面板移至右下角，下拉菜单向上展开 |
+| 2026-02-06 | 20 | UI布局 | 输入面板移至侧边栏下方(830,640)，侧边栏高度缩减至600px，盘体完全不被遮挡 |
+| 2026-02-06 | Bug fix | 下拉菜单遮挡 | 修复下拉菜单被侧边栏遮挡：交换main.py绘制顺序(先sidebar后input_panel) |

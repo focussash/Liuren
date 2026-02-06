@@ -136,12 +136,15 @@ class ResultSidebar:
         """绘制基本信息"""
         y = self._draw_section_title(screen, "【盘局信息】", y, clip_rect)
 
+        guiren_info = f"贵  人：{self.plate.guiren_branch}宫" if self.plate.guiren_branch else ""
         info_lines = [
             f"日干支：{self.plate.day_stem}{self.plate.day_branch}",
             f"时  支：{self.plate.hour_branch}",
             f"月  将：{self.plate.moon_general}（{self.plate.moon_general_name}）",
+            guiren_info,
             f"课  体：{self.lesson_type}"
         ]
+        info_lines = [line for line in info_lines if line]  # 过滤空行
 
         for line in info_lines:
             if clip_rect.top <= y <= clip_rect.bottom - 20:
@@ -164,6 +167,14 @@ class ResultSidebar:
             header = "      一课  二课  三课  四课"
             header_surf = self.small_font.render(header, True, COLOR_DIM)
             screen.blit(header_surf, (self.rect.x + 15, y))
+        y += 22
+
+        # 天将
+        if clip_rect.top <= y <= clip_rect.bottom - 20:
+            generals = [self.lessons[i].general[:2] if self.lessons[i].general else "  " for i in range(4)]
+            general_row = f"将：  {generals[0]}  {generals[1]}  {generals[2]}  {generals[3]}"
+            general_surf = self.small_font.render(general_row, True, COLOR_PASS)
+            screen.blit(general_surf, (self.rect.x + 15, y))
         y += 22
 
         # 天盘（上神）
@@ -190,11 +201,19 @@ class ResultSidebar:
         if len(self.passes) < 3:
             return y + 10
 
-        # 三传显示
+        # 三传显示（地支）
         if clip_rect.top <= y <= clip_rect.bottom - 20:
             passes_str = f"初传：{self.passes[0].branch}  →  中传：{self.passes[1].branch}  →  末传：{self.passes[2].branch}"
             passes_surf = self.small_font.render(passes_str, True, COLOR_PASS)
             screen.blit(passes_surf, (self.rect.x + 15, y))
+        y += 22
+
+        # 三传天将
+        if clip_rect.top <= y <= clip_rect.bottom - 20:
+            generals = [p.general if p.general else "无" for p in self.passes]
+            generals_str = f"天将：{generals[0]}  →  {generals[1]}  →  {generals[2]}"
+            generals_surf = self.small_font.render(generals_str, True, COLOR_ACCENT)
+            screen.blit(generals_surf, (self.rect.x + 15, y))
         y += 25
 
         return y + 10

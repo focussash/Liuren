@@ -13,6 +13,8 @@ from liuren.plate import LiurenPlate, build_heaven_plate
 from liuren.four_lessons import calculate_four_lessons
 from liuren.three_passes import calculate_three_passes
 from liuren.moon_general import get_moon_general as get_moon_general_new
+from liuren.generals import build_generals_plate
+from liuren.constants import GENERAL_ORDER
 from lunar_calendar.ganzhi import get_day_ganzhi, get_hour_branch
 
 # 导入UI组件
@@ -51,10 +53,14 @@ class CyberLiuren:
         self.animation_speed = 0.2
 
         # --- UI组件 ---
-        self.input_panel = InputPanel(20, 20, self.hud_font)
+        # 输入面板移至侧边栏下方（避开盘体中心区域）
+        input_panel_x = 830  # 对齐侧边栏左边缘（820+10）
+        input_panel_y = 640  # 侧边栏底部(20+600=620) + 20px间距
+        self.input_panel = InputPanel(input_panel_x, input_panel_y, self.hud_font)
         self.input_panel.set_paipan_callback(self.on_paipan)
+        self.input_panel.set_instant_paipan_callback(self.auto_paipan)
 
-        self.sidebar = ResultSidebar(820, 20, 360, 760, self.hud_font)
+        self.sidebar = ResultSidebar(820, 20, 360, 600, self.hud_font)
         self.highlighter = PlateHighlighter(self.center, self.heaven_radius)
 
         # --- 当前盘局状态 ---
@@ -62,6 +68,12 @@ class CyberLiuren:
         self.current_lessons = []
         self.current_passes = []
         self.current_lesson_type = ""
+
+        # --- 天将动画状态 ---
+        self.generals_animation_active = False
+        self.generals_visible_count = 0  # 当前显示的天将数量 (0-12)
+        self.generals_animation_timer = 0
+        self.generals_animation_interval = 100  # 每个天将间隔100ms
 
     def load_fonts(self):
         """字体加载与回退逻辑"""
@@ -81,6 +93,13 @@ class CyberLiuren:
             self.font_l = pygame.font.Font(None, 24)
             self.hud_font = pygame.font.Font(None, 18)
 
+    def auto_paipan(self):
+        """使用当前时间自动排盘"""
+        # 自动填充当前时间
+        self.input_panel._on_auto()
+        # 执行排盘
+        self.on_paipan()
+
     def on_paipan(self):
         """排盘按钮回调"""
         input_data = self.input_panel.get_input()
@@ -95,25 +114,30 @@ class CyberLiuren:
         # 2. 构建天地盘
         heaven_plate = build_heaven_plate(moon_general, hour_branch)
 
-        # 3. 创建LiurenPlate
+        # 3. 构建天将盘
+        generals_plate, guiren_branch = build_generals_plate(day_stem, hour_branch)
+
+        # 4. 创建LiurenPlate
         self.current_plate = LiurenPlate(
             day_stem=day_stem,
             day_branch=day_branch,
             hour_branch=hour_branch,
             moon_general=moon_general,
             moon_general_name=moon_general_name,
-            heaven_plate=heaven_plate
+            heaven_plate=heaven_plate,
+            generals_plate=generals_plate,
+            guiren_branch=guiren_branch
         )
 
-        # 4. 计算四课
+        # 5. 计算四课
         self.current_lessons = calculate_four_lessons(self.current_plate)
 
-        # 5. 计算三传
+        # 6. 计算三传
         self.current_passes, self.current_lesson_type = calculate_three_passes(
             self.current_plate, self.current_lessons
         )
 
-        # 6. 更新侧边栏
+        # 7. 更新侧边栏
         self.sidebar.set_plate(
             self.current_plate,
             self.current_lessons,
@@ -121,8 +145,11 @@ class CyberLiuren:
             self.current_lesson_type
         )
 
-        # 7. 自动对齐天盘到当前时支
+        # 8. 自动对齐天盘到当前时支
         self.align_to_input(hour_branch, moon_general)
+
+        # 9. 启动布将动画
+        self.start_generals_animation()
 
         print(f"排盘完成: {day_stem}{day_branch}日 {hour_branch}时 月将{moon_general}({moon_general_name}) 课体:{self.current_lesson_type}")
 
@@ -141,6 +168,74 @@ class CyberLiuren:
             return
 
         self.target_angle = self.angle + delta
+
+    def start_generals_animation(self):
+        """开始布将动画"""
+        self.generals_animation_active = True
+        self.generals_visible_count = 0
+        self.generals_animation_timer = pygame.time.get_ticks()
+
+    def update_generals_animation(self):
+        """更新布将动画"""
+        if not self.generals_animation_active:
+            return
+        now = pygame.time.get_ticks()
+        elapsed = now - self.generals_animation_timer
+        new_count = min(12, elapsed // self.generals_animation_interval)
+        if new_count > self.generals_visible_count:
+            self.generals_visible_count = new_count
+        if self.generals_visible_count >= 12:
+            self.generals_animation_active = False
+
+    def draw_generals(self, screen, angle_offset):
+        """
+        绘制天将（跟随天盘旋转）
+
+        Args:
+            screen: 绘制目标
+            angle_offset: 天盘旋转角度（弧度）
+        """
+        if not self.current_plate or not self.current_plate.generals_plate:
+            return
+
+        # 天将显示半径（在月将内侧）
+        r_general = self.heaven_radius * 0.35
+
+        # 获取需要显示的天将数量
+        visible_count = self.generals_visible_count if self.generals_animation_active else 12
+
+        # 按照地支顺序绘制天将
+        for i, branch in enumerate(EARTHLY_BRANCHES):
+            general = self.current_plate.generals_plate.get(branch, '')
+            if not general:
+                continue
+
+            # 检查此天将是否在当前动画显示范围内
+            general_index = GENERAL_ORDER.index(general)
+            if general_index >= visible_count:
+                continue
+
+            # 计算角度（从子位开始，子位在正下方即-90度位置）
+            # 地支顺序：子(0)在下，顺时针排列
+            base_angle = -90 + i * 30  # 子位在-90度
+            angle_rad = math.radians(base_angle) + angle_offset
+
+            # 计算位置
+            x = self.center[0] + r_general * math.cos(angle_rad)
+            y = self.center[1] + r_general * math.sin(angle_rad)
+
+            # 计算文字旋转角度（让文字朝外可读）
+            text_angle = -base_angle - math.degrees(angle_offset) - 90
+
+            # 绘制天将名称（只取前两个字符）
+            general_short = general[:2]
+            # 贵人用金色，其他天将用红色
+            if general == '贵人':
+                color = (255, 215, 0)  # 金色
+            else:
+                color = (180, 100, 100)  # 暗红色
+            self.draw_rotated_text(screen, general_short, self.font_s,
+                                   color, (x, y), text_angle)
 
     def save_screenshot(self):
         """保存截图到文件"""
@@ -403,7 +498,15 @@ class CyberLiuren:
                         self.dragging = False
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
-                        self.align_to_now()
+                        if self.current_plate:
+                            # 已排盘：对齐到排盘时的时支
+                            self.align_to_input(
+                                self.current_plate.hour_branch,
+                                self.current_plate.moon_general
+                            )
+                        else:
+                            # 未排盘：自动排盘（当前时间）
+                            self.auto_paipan()
                     elif event.key == pygame.K_F5:
                         self.save_screenshot()
                     elif event.key == pygame.K_F6:
@@ -453,6 +556,10 @@ class CyberLiuren:
             heaven_rect = rotated_heaven.get_rect(center=self.center)
             self.screen.blit(rotated_heaven, heaven_rect)
 
+            # C2. 天将层（跟随天盘旋转）
+            self.update_generals_animation()
+            self.draw_generals(self.screen, math.radians(-self.angle))
+
             # D. 高亮四课三传（如果有盘局）
             if self.current_plate and self.current_lessons:
                 angle_offset = math.radians(-self.angle)
@@ -464,8 +571,8 @@ class CyberLiuren:
                 )
 
             # E. 绘制UI组件
-            self.input_panel.draw(self.screen)
-            self.sidebar.draw(self.screen)
+            self.sidebar.draw(self.screen)       # 先绘制侧边栏
+            self.input_panel.draw(self.screen)   # 后绘制输入面板（下拉菜单在上层）
 
             # F. HUD
             now = datetime.datetime.now()

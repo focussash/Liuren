@@ -14,6 +14,7 @@ class Lesson:
     heaven: str  # 天盘（上神）
     earth: str   # 地盘
     index: int   # 第几课 (1-4)
+    general: str = ""  # 天将
 
 
 @dataclass
@@ -21,6 +22,7 @@ class Pass:
     """一传数据"""
     branch: str  # 地支
     index: int   # 第几传 (1=初传, 2=中传, 3=末传)
+    general: str = ""  # 天将
 
 
 @dataclass
@@ -32,6 +34,8 @@ class LiurenPlate:
     moon_general: str                # 月将地支
     moon_general_name: str           # 月将名称
     heaven_plate: Dict[str, str]     # 地盘位置 -> 天盘地支
+    generals_plate: Dict[str, str] = field(default_factory=dict)  # 地支 -> 天将
+    guiren_branch: str = ""          # 贵人所临地支
     lessons: List[Lesson] = field(default_factory=list)      # 四课
     passes: List[Pass] = field(default_factory=list)         # 三传
     lesson_type: str = ""            # 课体名称

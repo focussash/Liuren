@@ -56,7 +56,8 @@ class DropdownSelector:
     """下拉选择器组件"""
 
     def __init__(self, x: int, y: int, width: int, height: int,
-                 options: list, label: str, font: pygame.font.Font):
+                 options: list, label: str, font: pygame.font.Font,
+                 open_upward: bool = False):
         self.x = x
         self.y = y
         self.width = width
@@ -64,6 +65,7 @@ class DropdownSelector:
         self.options = options
         self.label = label
         self.font = font
+        self.open_upward = open_upward  # 是否向上展开
 
         self.selected_index = 0
         self.expanded = False
@@ -91,6 +93,19 @@ class DropdownSelector:
             # 点击主区域
             if self.main_rect.collidepoint(pos):
                 self.expanded = not self.expanded
+                # 预计算dropdown_rect以便后续碰撞检测
+                if self.expanded:
+                    dropdown_height = len(self.options) * self.height
+                    if self.open_upward:
+                        self.dropdown_rect = pygame.Rect(
+                            self.x, self.y - dropdown_height,
+                            self.width, dropdown_height
+                        )
+                    else:
+                        self.dropdown_rect = pygame.Rect(
+                            self.x, self.y + self.height,
+                            self.width, dropdown_height
+                        )
                 return True
 
             # 展开状态下点击选项
@@ -147,10 +162,19 @@ class DropdownSelector:
     def _draw_dropdown(self, screen: pygame.Surface):
         """绘制下拉列表"""
         dropdown_height = len(self.options) * self.height
-        self.dropdown_rect = pygame.Rect(
-            self.x, self.y + self.height,
-            self.width, dropdown_height
-        )
+
+        if self.open_upward:
+            # 向上展开
+            self.dropdown_rect = pygame.Rect(
+                self.x, self.y - dropdown_height,
+                self.width, dropdown_height
+            )
+        else:
+            # 向下展开
+            self.dropdown_rect = pygame.Rect(
+                self.x, self.y + self.height,
+                self.width, dropdown_height
+            )
 
         # 背景
         pygame.draw.rect(screen, COLOR_DROPDOWN_BG, self.dropdown_rect)
@@ -158,10 +182,16 @@ class DropdownSelector:
 
         # 选项
         for i, option in enumerate(self.options):
-            option_rect = pygame.Rect(
-                self.x, self.y + self.height + i * self.height,
-                self.width, self.height
-            )
+            if self.open_upward:
+                option_rect = pygame.Rect(
+                    self.x, self.y - dropdown_height + i * self.height,
+                    self.width, self.height
+                )
+            else:
+                option_rect = pygame.Rect(
+                    self.x, self.y + self.height + i * self.height,
+                    self.width, self.height
+                )
 
             # 悬停高亮
             if i == self.hovered_index:
@@ -180,10 +210,11 @@ class DropdownSelector:
 class InputPanel:
     """输入面板：包含日干、日支、时支选择器和按钮"""
 
-    def __init__(self, x: int, y: int, font: pygame.font.Font):
+    def __init__(self, x: int, y: int, font: pygame.font.Font, open_upward: bool = True):
         self.x = x
         self.y = y
         self.font = font
+        self.open_upward = open_upward
 
         # 创建选择器
         selector_width = 60
@@ -192,30 +223,37 @@ class InputPanel:
 
         self.day_stem_selector = DropdownSelector(
             x, y + 25, selector_width, selector_height,
-            list(HEAVENLY_STEMS), "日干", font
+            list(HEAVENLY_STEMS), "日干", font, open_upward=open_upward
         )
         self.day_branch_selector = DropdownSelector(
             x + spacing, y + 25, selector_width, selector_height,
-            list(EARTHLY_BRANCHES), "日支", font
+            list(EARTHLY_BRANCHES), "日支", font, open_upward=open_upward
         )
         self.hour_branch_selector = DropdownSelector(
             x + spacing * 2, y + 25, selector_width, selector_height,
-            list(EARTHLY_BRANCHES), "时支", font
+            list(EARTHLY_BRANCHES), "时支", font, open_upward=open_upward
         )
 
         # 创建按钮
         button_y = y + 75
-        self.auto_button = Button(x, button_y, 80, 30, "自动", font)
-        self.paipan_button = Button(x + 90, button_y, 80, 30, "排盘", font)
+        self.auto_button = Button(x, button_y, 50, 30, "当前", font)
+        self.paipan_button = Button(x + 55, button_y, 50, 30, "排盘", font)
+        self.instant_button = Button(x + 110, button_y, 70, 30, "即时起卦", font)
 
         # 回调
         self.on_paipan = None
+        self.on_instant_paipan = None
         self.auto_button.set_callback(self._on_auto)
 
     def set_paipan_callback(self, callback):
         """设置排盘按钮回调"""
         self.on_paipan = callback
         self.paipan_button.set_callback(callback)
+
+    def set_instant_paipan_callback(self, callback):
+        """设置即时起卦按钮回调"""
+        self.on_instant_paipan = callback
+        self.instant_button.set_callback(callback)
 
     def _on_auto(self):
         """自动填入当前时间的干支"""
@@ -244,6 +282,8 @@ class InputPanel:
             return True
         if self.paipan_button.handle_event(event):
             return True
+        if self.instant_button.handle_event(event):
+            return True
 
         # 选择器事件（注意顺序，展开的要先处理）
         selectors = [self.day_stem_selector, self.day_branch_selector, self.hour_branch_selector]
@@ -265,7 +305,7 @@ class InputPanel:
     def draw(self, screen: pygame.Surface):
         """绘制面板"""
         # 绘制背景
-        panel_rect = pygame.Rect(self.x - 10, self.y - 5, 260, 120)
+        panel_rect = pygame.Rect(self.x - 10, self.y - 5, 260, 125)
         pygame.draw.rect(screen, COLOR_PANEL_BG, panel_rect, border_radius=8)
         pygame.draw.rect(screen, COLOR_BORDER, panel_rect, width=1, border_radius=8)
 
@@ -283,3 +323,4 @@ class InputPanel:
         # 绘制按钮
         self.auto_button.draw(screen)
         self.paipan_button.draw(screen)
+        self.instant_button.draw(screen)
