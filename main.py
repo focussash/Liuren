@@ -301,10 +301,13 @@ class CyberLiuren:
     # --- 辅助绘图 ---
 
     def draw_rotated_text(self, surf, text, font, color, center, angle_deg):
+        # 先用2倍大小渲染，旋转后缩回，减少模糊
         txt_surf = font.render(text, True, color)
-        rotated_txt = pygame.transform.rotate(txt_surf, angle_deg)
-        rect = rotated_txt.get_rect(center=center)
-        surf.blit(rotated_txt, rect)
+        scaled_up = pygame.transform.scale(txt_surf,
+            (txt_surf.get_width() * 2, txt_surf.get_height() * 2))
+        rotated = pygame.transform.rotozoom(scaled_up, angle_deg, 0.5)  # 旋转并缩回50%
+        rect = rotated.get_rect(center=center)
+        surf.blit(rotated, rect)
 
     def get_mouse_angle(self, pos):
         dx = pos[0] - self.center[0]
@@ -429,26 +432,37 @@ class CyberLiuren:
                 pygame.draw.circle(surf, COLOR_NODE, pt, 5)
                 pygame.draw.circle(surf, (200, 50, 50), pt, 2)
 
-        # 内圈：十二月将
-        r_gen = radius * 0.52
-        for i, gen_name in enumerate(MOON_GENERALS):
-            angle_deg = 90 + i * 30
-            rad = math.radians(angle_deg)
-            x = mid + r_gen * math.cos(rad)
-            y = mid + r_gen * math.sin(rad)
-            self.draw_rotated_text(surf, gen_name, self.font_m, COLOR_TEXT, (x, y), -angle_deg - 90)
+        return surf
 
-        # 外圈：二十八宿
-        r_xiu = radius * 0.88
+    def draw_heaven_text(self, screen, angle_offset):
+        """实时绘制天盘上的文字（月将、二十八宿），避免二次旋转模糊
+
+        Args:
+            screen: 绘制目标
+            angle_offset: 天盘旋转角度（弧度）
+        """
+        mid_x, mid_y = self.center
+
+        # 内圈十二月将
+        r_gen = self.heaven_radius * 0.52
+        for i, gen_name in enumerate(MOON_GENERALS):
+            base_angle = 90 + i * 30
+            angle_rad = math.radians(base_angle) + angle_offset
+            x = mid_x + r_gen * math.cos(angle_rad)
+            y = mid_y + r_gen * math.sin(angle_rad)
+            text_angle = -base_angle - math.degrees(angle_offset) - 90
+            self.draw_rotated_text(screen, gen_name, self.font_m, COLOR_TEXT, (x, y), text_angle)
+
+        # 外圈二十八宿
+        r_xiu = self.heaven_radius * 0.88
         step_angle = 360 / 28
         for i, char in enumerate(ORDERED_XIU_R):
-            angle_deg = 90 + i * step_angle
-            rad = math.radians(angle_deg)
-            x = mid + r_xiu * math.cos(rad)
-            y = mid + r_xiu * math.sin(rad)
-            self.draw_rotated_text(surf, char, self.font_s, COLOR_TEXT_DIM, (x, y), -angle_deg - 90)
-
-        return surf
+            base_angle = 90 + i * step_angle
+            angle_rad = math.radians(base_angle) + angle_offset
+            x = mid_x + r_xiu * math.cos(angle_rad)
+            y = mid_y + r_xiu * math.sin(angle_rad)
+            text_angle = -base_angle - math.degrees(angle_offset) - 90
+            self.draw_rotated_text(screen, char, self.font_s, COLOR_TEXT_DIM, (x, y), text_angle)
 
     def align_to_now(self):
         """自动对齐到当前时间"""
@@ -551,10 +565,13 @@ class CyberLiuren:
             shadow_rect = self.shadow_surf.get_rect(center=(self.center[0] + 12, self.center[1] + 12))
             self.screen.blit(self.shadow_surf, shadow_rect)
 
-            # C. 天盘
+            # C. 天盘（背景）
             rotated_heaven = pygame.transform.rotate(self.heaven_surf, -self.angle)
             heaven_rect = rotated_heaven.get_rect(center=self.center)
             self.screen.blit(rotated_heaven, heaven_rect)
+
+            # C1. 天盘文字（月将、二十八宿）- 实时绘制避免二次旋转模糊
+            self.draw_heaven_text(self.screen, math.radians(-self.angle))
 
             # C2. 天将层（跟随天盘旋转）
             self.update_generals_animation()
