@@ -5,6 +5,8 @@ import pygame
 import math
 import sys
 import datetime
+import numpy as np
+from pyrr import matrix44, Vector3
 from config import *
 from core import get_chinese_hour, get_moon_general
 
@@ -19,6 +21,9 @@ from lunar_calendar.ganzhi import get_day_ganzhi, get_hour_branch
 
 # 导入UI组件
 from ui import InputPanel, PlateHighlighter, ResultSidebar
+
+# 导入3D渲染模块
+from renderer3d import GLContext, OrbitCamera, PlateRenderer3D
 
 
 class CyberLiuren:
@@ -74,6 +79,18 @@ class CyberLiuren:
         self.generals_visible_count = 0  # 当前显示的天将数量 (0-12)
         self.generals_animation_timer = 0
         self.generals_animation_interval = 100  # 每个天将间隔100ms
+
+        # --- 3D模式 ---
+        self.mode_3d = False
+        self.gl_context = GLContext(self.plate_area_width, WINDOW_SIZE[1])
+        self.camera = OrbitCamera(distance=12.0, theta=0.0, phi=45.0)
+        self.heaven_surf_3d = self.create_heaven_plate_3d()
+        self.heaven_3d_needs_update = False
+        self.plate_renderer = PlateRenderer3D(
+            self.gl_context.ctx, self.earth_surf, self.heaven_surf_3d
+        )
+        self.right_dragging = False
+        self.last_right_mouse_pos = (0, 0)
 
     def load_fonts(self):
         """字体加载与回退逻辑"""
@@ -151,6 +168,9 @@ class CyberLiuren:
         # 9. 启动布将动画
         self.start_generals_animation()
 
+        # 10. 标记3D天盘纹理需更新（等布将动画完成后重建）
+        self.heaven_3d_needs_update = True
+
         print(f"排盘完成: {day_stem}{day_branch}日 {hour_branch}时 月将{moon_general}({moon_general_name}) 课体:{self.current_lesson_type}")
 
     def align_to_input(self, hour_branch: str, moon_general: str):
@@ -186,6 +206,11 @@ class CyberLiuren:
             self.generals_visible_count = new_count
         if self.generals_visible_count >= 12:
             self.generals_animation_active = False
+            # Rebuild 3D heaven texture with all generals baked in
+            if self.heaven_3d_needs_update:
+                self.heaven_surf_3d = self.create_heaven_plate_3d()
+                self.plate_renderer.update_heaven_texture(self.heaven_surf_3d)
+                self.heaven_3d_needs_update = False
 
     def draw_generals(self, screen, angle_offset):
         """
@@ -434,6 +459,86 @@ class CyberLiuren:
 
         return surf
 
+    def create_heaven_plate_3d(self):
+        """Pre-render heaven plate texture for 3D mode.
+
+        Unlike the 2D heaven_surf, this includes all text (moon generals,
+        28 mansions, generals) baked into the texture. Convex lighting is
+        omitted since the 3D shader handles Blinn-Phong lighting.
+        """
+        diameter = self.heaven_diameter
+        radius = diameter // 2
+        mid = radius
+
+        surf = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+
+        # Background circle (no convex lighting - shader handles it)
+        pygame.draw.circle(surf, COLOR_HEAVEN_BG, (mid, mid), radius)
+
+        # Structural lines
+        pygame.draw.circle(surf, COLOR_DECO, (mid, mid), radius, 4)
+        pygame.draw.circle(surf, COLOR_DECO, (mid, mid), int(radius * 0.68), 2)
+        rect = pygame.Rect(2, 2, diameter - 4, diameter - 4)
+        pygame.draw.arc(surf, (180, 160, 120), rect, math.pi / 2, math.pi, 2)
+
+        # Beidou (北斗七星)
+        star_coords = [
+            (-90, -22), (-63, -13), (-32, -9), (0, 0),
+            (18, 22), (50, 9), (45, -32)
+        ]
+        screen_points = [(mid + x, mid + y) for x, y in star_coords]
+        line_color = (180, 60, 60)
+        pygame.draw.lines(surf, line_color, False, screen_points[0:4], 3)
+        pygame.draw.lines(surf, line_color, False, screen_points[3:], 3)
+        for i, pt in enumerate(screen_points):
+            if i == 3:
+                pygame.draw.circle(surf, COLOR_NODE, pt, 8, 2)
+                pygame.draw.circle(surf, (200, 50, 50), pt, 2)
+            else:
+                pygame.draw.circle(surf, COLOR_NODE, pt, 5)
+                pygame.draw.circle(surf, (200, 50, 50), pt, 2)
+
+        # Moon generals (月将) at default angle
+        r_gen = radius * 0.52
+        for i, gen_name in enumerate(MOON_GENERALS):
+            base_angle = 90 + i * 30
+            angle_rad = math.radians(base_angle)
+            x = mid + r_gen * math.cos(angle_rad)
+            y = mid + r_gen * math.sin(angle_rad)
+            text_angle = -base_angle - 90
+            self.draw_rotated_text(surf, gen_name, self.font_m, COLOR_TEXT, (x, y), text_angle)
+
+        # 28 mansions (二十八宿) at default angle
+        r_xiu = radius * 0.88
+        step_angle = 360 / 28
+        for i, char in enumerate(ORDERED_XIU_R):
+            base_angle = 90 + i * step_angle
+            angle_rad = math.radians(base_angle)
+            x = mid + r_xiu * math.cos(angle_rad)
+            y = mid + r_xiu * math.sin(angle_rad)
+            text_angle = -base_angle - 90
+            self.draw_rotated_text(surf, char, self.font_s, COLOR_TEXT_DIM, (x, y), text_angle)
+
+        # Generals (天将) - only if paipan data exists and animation complete
+        if (self.current_plate and self.current_plate.generals_plate
+                and not self.generals_animation_active):
+            r_general = radius * 0.35
+            for i, branch in enumerate(EARTHLY_BRANCHES):
+                general = self.current_plate.generals_plate.get(branch, '')
+                if not general:
+                    continue
+                base_angle = -90 + i * 30
+                angle_rad = math.radians(base_angle)
+                x = mid + r_general * math.cos(angle_rad)
+                y = mid + r_general * math.sin(angle_rad)
+                text_angle = -base_angle - 90
+                general_short = general[:2]
+                color = (255, 215, 0) if general == '贵人' else (180, 100, 100)
+                self.draw_rotated_text(surf, general_short, self.font_s,
+                                       color, (x, y), text_angle)
+
+        return surf
+
     def draw_heaven_text(self, screen, angle_offset):
         """实时绘制天盘上的文字（月将、二十八宿），避免二次旋转模糊
 
@@ -484,6 +589,140 @@ class CyberLiuren:
 
         self.target_angle = self.angle + delta
 
+    def _render_2d(self):
+        """2D渲染路径（原有逻辑）"""
+        # A. 地盘
+        earth_rect = self.earth_surf.get_rect(center=self.center)
+        self.screen.blit(self.earth_surf, earth_rect)
+
+        # B. 阴影
+        shadow_rect = self.shadow_surf.get_rect(center=(self.center[0] + 12, self.center[1] + 12))
+        self.screen.blit(self.shadow_surf, shadow_rect)
+
+        # C. 天盘（背景）
+        rotated_heaven = pygame.transform.rotate(self.heaven_surf, -self.angle)
+        heaven_rect = rotated_heaven.get_rect(center=self.center)
+        self.screen.blit(rotated_heaven, heaven_rect)
+
+        # C1. 天盘文字（月将、二十八宿）- 实时绘制避免二次旋转模糊
+        self.draw_heaven_text(self.screen, math.radians(-self.angle))
+
+        # C2. 天将层（跟随天盘旋转）
+        self.update_generals_animation()
+        self.draw_generals(self.screen, math.radians(-self.angle))
+
+        # D. 高亮四课三传（如果有盘局）
+        if self.current_plate and self.current_lessons:
+            angle_offset = math.radians(-self.angle)
+            self.highlighter.highlight_all(
+                self.screen,
+                self.current_lessons,
+                self.current_passes,
+                angle_offset
+            )
+
+    def _highlight_3d(self, vp):
+        """Draw 3D-projected highlights for four lessons and three passes.
+
+        Projects branch positions on the heaven plate to screen coordinates,
+        then draws glow effects using the existing Pygame highlighter.
+        """
+        if not self.current_plate or not self.current_lessons:
+            return
+
+        from renderer3d.plate_renderer import HEAVEN_RADIUS, HEAVEN_DEPTH
+
+        # Build heaven plate model matrix (matching render_heaven)
+        angle_rad = float(np.radians(-self.angle))
+        rotation = matrix44.create_from_y_rotation(angle_rad, dtype='f4')
+        translation = matrix44.create_from_translation(
+            Vector3([0.0, self.plate_renderer.heaven_y, 0.0]), dtype='f4'
+        )
+        model = matrix44.multiply(rotation, translation)
+        mvp = matrix44.multiply(model, vp)
+
+        viewport_w = self.plate_area_width
+        viewport_h = WINDOW_SIZE[1]
+        r_highlight = HEAVEN_RADIUS * 0.65
+        half_depth = HEAVEN_DEPTH / 2
+
+        def branch_to_screen(branch):
+            """Project a branch position on the heaven plate to screen coords."""
+            idx = EARTHLY_BRANCHES.index(branch)
+            # Mesh angle: texture angle negated due to Y-flip
+            mesh_angle = math.radians(-(90 + idx * 30))
+            local = np.array([
+                r_highlight * math.cos(mesh_angle),
+                half_depth,
+                r_highlight * math.sin(mesh_angle),
+                1.0
+            ], dtype='f4')
+            clip = local @ mvp
+            if clip[3] <= 0:
+                return None  # behind camera
+            ndc = clip[:3] / clip[3]
+            sx = (ndc[0] + 1) / 2 * viewport_w
+            sy = (1 - ndc[1]) / 2 * viewport_h
+            return (int(sx), int(sy))
+
+        # Highlight four lessons (gold)
+        for lesson in self.current_lessons:
+            pos = branch_to_screen(lesson.heaven)
+            if pos:
+                self.highlighter._draw_glow(self.screen, pos, (255, 200, 100, 120))
+
+        # Highlight three passes (initial=red, others=cyan)
+        for i, p in enumerate(self.current_passes):
+            color = (255, 100, 100, 180) if i == 0 else (100, 200, 255, 150)
+            pos = branch_to_screen(p.branch)
+            if pos:
+                self.highlighter._draw_glow(self.screen, pos, color)
+
+        # Connection lines between passes
+        if len(self.current_passes) >= 2:
+            points = []
+            for p in self.current_passes:
+                pos = branch_to_screen(p.branch)
+                if pos:
+                    points.append(pos)
+            for i in range(len(points) - 1):
+                pygame.draw.line(self.screen, (150, 200, 255, 100),
+                                 points[i], points[i + 1], 2)
+
+    def _render_3d(self):
+        """3D渲染路径"""
+        aspect = self.plate_area_width / WINDOW_SIZE[1]
+        vp = self.camera.get_vp_matrix(aspect)
+        camera_pos = self.camera.get_eye_position()
+
+        # 渲染3D场景到FBO
+        self.gl_context.begin_frame()
+        self.gl_context.ctx.enable(self.gl_context.ctx.BLEND)
+        self.gl_context.ctx.blend_func = (
+            self.gl_context.ctx.SRC_ALPHA,
+            self.gl_context.ctx.ONE_MINUS_SRC_ALPHA
+        )
+
+        # A. 地盘
+        self.plate_renderer.render_earth(vp, camera_pos)
+
+        # B. 盘间阴影（地盘表面，天盘下方）
+        self.plate_renderer.render_shadow(vp)
+
+        # C. 天盘（悬浮在地盘上方，随self.angle旋转）
+        self.plate_renderer.render_heaven(vp, camera_pos, -self.angle)
+
+        surface_3d = self.gl_context.end_frame()
+
+        # 将3D渲染结果blit到屏幕的plate区域
+        self.screen.blit(surface_3d, (0, 0))
+
+        # D. 高亮四课三传（2D overlay，投影到屏幕坐标）
+        self._highlight_3d(vp)
+
+        # 天将动画仍需更新（即使不在2D中渲染）
+        self.update_generals_animation()
+
     def run(self):
         running = True
         while running:
@@ -502,14 +741,46 @@ class CyberLiuren:
                 # 式盘交互
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        dist = math.hypot(event.pos[0]-self.center[0], event.pos[1]-self.center[1])
-                        if dist < self.heaven_diameter / 2:
-                            self.dragging = True
-                            self.velocity = 0
-                            self.target_angle = None
+                        # 左键：旋转天盘（2D用角度判定，3D用plate区域判定）
+                        if self.mode_3d:
+                            if event.pos[0] < self.plate_area_width:
+                                self.dragging = True
+                                self.velocity = 0
+                                self.target_angle = None
+                        else:
+                            dist = math.hypot(event.pos[0]-self.center[0], event.pos[1]-self.center[1])
+                            if dist < self.heaven_diameter / 2:
+                                self.dragging = True
+                                self.velocity = 0
+                                self.target_angle = None
+                    elif event.button == 3 and self.mode_3d:
+                        # 右键：3D模式下旋转相机
+                        self.right_dragging = True
+                        self.last_right_mouse_pos = event.pos
+                    elif event.button == 4 and self.mode_3d:
+                        # 滚轮上：缩放
+                        if event.pos[0] < self.plate_area_width:
+                            self.camera.zoom(1)
+                    elif event.button == 5 and self.mode_3d:
+                        # 滚轮下：缩放
+                        if event.pos[0] < self.plate_area_width:
+                            self.camera.zoom(-1)
+                elif event.type == pygame.MOUSEWHEEL and self.mode_3d:
+                    # 部分系统用MOUSEWHEEL而非button 4/5
+                    mouse_pos = pygame.mouse.get_pos()
+                    if mouse_pos[0] < self.plate_area_width:
+                        self.camera.zoom(event.y)
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:
                         self.dragging = False
+                    elif event.button == 3:
+                        self.right_dragging = False
+                elif event.type == pygame.MOUSEMOTION and self.right_dragging and self.mode_3d:
+                    # 右键拖拽：旋转相机
+                    dx = event.pos[0] - self.last_right_mouse_pos[0]
+                    dy = event.pos[1] - self.last_right_mouse_pos[1]
+                    self.camera.orbit(dx, dy)
+                    self.last_right_mouse_pos = event.pos
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
                         if self.current_plate:
@@ -521,23 +792,37 @@ class CyberLiuren:
                         else:
                             # 未排盘：自动排盘（当前时间）
                             self.auto_paipan()
+                    elif event.key == pygame.K_TAB:
+                        self.mode_3d = not self.mode_3d
+                        print(f"Mode: {'3D' if self.mode_3d else '2D'}")
                     elif event.key == pygame.K_F5:
                         self.save_screenshot()
+                    elif event.key == pygame.K_HOME and self.mode_3d:
+                        self.camera.reset()
                     elif event.key == pygame.K_F6:
                         self.export_text()
 
             # --- 2. 物理更新 ---
             if self.dragging:
                 mouse_pos = pygame.mouse.get_pos()
-                current_mouse_angle = self.get_mouse_angle(mouse_pos)
-                if self.last_mouse_pos != (0,0):
-                    last = self.get_mouse_angle(self.last_mouse_pos)
-                    delta = current_mouse_angle - last
-                    if delta > 180: delta -= 360
-                    if delta < -180: delta += 360
-                    self.angle += delta
-                    self.velocity = delta
-                self.last_mouse_pos = mouse_pos
+                if self.mode_3d:
+                    # 3D模式：水平拖拽增量直接映射到旋转角度
+                    if self.last_mouse_pos != (0, 0):
+                        delta = (mouse_pos[0] - self.last_mouse_pos[0]) * 0.5
+                        self.angle += delta
+                        self.velocity = delta
+                    self.last_mouse_pos = mouse_pos
+                else:
+                    # 2D模式：基于角度的拖拽（原有逻辑）
+                    current_mouse_angle = self.get_mouse_angle(mouse_pos)
+                    if self.last_mouse_pos != (0,0):
+                        last = self.get_mouse_angle(self.last_mouse_pos)
+                        delta = current_mouse_angle - last
+                        if delta > 180: delta -= 360
+                        if delta < -180: delta += 360
+                        self.angle += delta
+                        self.velocity = delta
+                    self.last_mouse_pos = mouse_pos
             else:
                 self.last_mouse_pos = (0,0)
                 if self.target_angle is not None:
@@ -557,49 +842,29 @@ class CyberLiuren:
             # --- 3. 渲染 ---
             self.screen.fill(COLOR_BG)
 
-            # A. 地盘
-            earth_rect = self.earth_surf.get_rect(center=self.center)
-            self.screen.blit(self.earth_surf, earth_rect)
+            if self.mode_3d:
+                # === 3D渲染路径 ===
+                self._render_3d()
+            else:
+                # === 2D渲染路径（原有逻辑不变）===
+                self._render_2d()
 
-            # B. 阴影
-            shadow_rect = self.shadow_surf.get_rect(center=(self.center[0] + 12, self.center[1] + 12))
-            self.screen.blit(self.shadow_surf, shadow_rect)
-
-            # C. 天盘（背景）
-            rotated_heaven = pygame.transform.rotate(self.heaven_surf, -self.angle)
-            heaven_rect = rotated_heaven.get_rect(center=self.center)
-            self.screen.blit(rotated_heaven, heaven_rect)
-
-            # C1. 天盘文字（月将、二十八宿）- 实时绘制避免二次旋转模糊
-            self.draw_heaven_text(self.screen, math.radians(-self.angle))
-
-            # C2. 天将层（跟随天盘旋转）
-            self.update_generals_animation()
-            self.draw_generals(self.screen, math.radians(-self.angle))
-
-            # D. 高亮四课三传（如果有盘局）
-            if self.current_plate and self.current_lessons:
-                angle_offset = math.radians(-self.angle)
-                self.highlighter.highlight_all(
-                    self.screen,
-                    self.current_lessons,
-                    self.current_passes,
-                    angle_offset
-                )
-
-            # E. 绘制UI组件
+            # E. 绘制UI组件（两种模式通用）
             self.sidebar.draw(self.screen)       # 先绘制侧边栏
             self.input_panel.draw(self.screen)   # 后绘制输入面板（下拉菜单在上层）
 
             # F. HUD
             now = datetime.datetime.now()
-            info_text = f"{now.strftime('%Y-%m-%d %H:%M')} | SPACE: 自动归位 | F5: 截图 | F6: 导出文本"
+            mode_str = "3D" if self.mode_3d else "2D"
+            info_text = f"[{mode_str}] {now.strftime('%Y-%m-%d %H:%M')} | TAB: 切换模式 | SPACE: 自动归位 | F5: 截图"
             hud = self.hud_font.render(info_text, True, COLOR_TEXT_DIM)
             self.screen.blit(hud, (20, WINDOW_SIZE[1] - 35))
 
             pygame.display.flip()
             self.clock.tick(FPS)
 
+        self.plate_renderer.release()
+        self.gl_context.release()
         pygame.quit()
         sys.exit()
 

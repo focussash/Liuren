@@ -185,15 +185,135 @@ Progress tracking for 赛博大六壬 四课三传系统
 
 ---
 
-## In Progress
+## Completed (Main Project 2: 式盘3D化)
 
-_(None)_
+### Subproject 3D-1: ModernGL上下文与Pygame集成
+- Created `renderer3d/` package:
+  - `renderer3d/__init__.py`: exports GLContext
+  - `renderer3d/context.py`: GLContext class (standalone context + FBO readback)
+  - `renderer3d/shaders.py`: test vertex/fragment shader pair
+- Modified `main.py`:
+  - Added `import numpy`, `from renderer3d import GLContext`
+  - Added `self.mode_3d` flag, `self.gl_context` initialization
+  - `Tab` key toggles 2D/3D mode
+  - Extracted `_render_2d()` and `_render_3d()` methods
+  - HUD shows current mode `[2D]`/`[3D]`
+  - GL resources cleaned up on exit
+- **Dependencies**: moderngl, pyrr, numpy installed into biomotum venv
+- **Tests**: 160/160 existing tests still pass
+- **Pipeline verified**: standalone context → FBO → readback → Pygame surface blit OK
+
+### Subproject 3D-2: 轨道相机
+- Created `renderer3d/camera.py`:
+  - `OrbitCamera` class: spherical coordinates (theta/phi/distance)
+  - `get_eye_position()`, `get_view_matrix()`, `get_projection_matrix()`, `get_vp_matrix()`
+  - `orbit(dx, dy)`: mouse drag → theta/phi adjustment (with clamping 10°-80°)
+  - `zoom(delta)`: scroll → distance adjustment (clamped 5-30)
+  - `reset()`: Home key resets to default view
+- Modified `main.py`:
+  - Right-click drag in 3D mode → `camera.orbit()`
+  - Scroll wheel in 3D mode → `camera.zoom()` (only in plate area)
+  - Left-click drag in 3D mode → horizontal delta maps to rotation angle
+  - Home key → camera reset
+  - `MOUSEWHEEL` event support (cross-platform)
+- **Tests**: 160/160 existing tests pass, camera unit tests pass
+
+### Subproject 3D-3: 地盘3D几何体
+- Created `renderer3d/geometry.py`:
+  - `create_box_mesh(width, height, depth)`: 6面方盒，每面4顶点(pos+normal+uv)
+  - `create_cylinder_mesh(radius, height, segments)`: 圆柱体（顶面/底面/侧面）
+- Created `renderer3d/texture_manager.py`:
+  - `TextureManager`: Pygame Surface → GL RGBA纹理（含Y轴翻转）
+  - `surface_to_texture()`, `update_texture()`, cache管理
+- Created `renderer3d/plate_renderer.py`:
+  - `PlateRenderer3D`: 编译shader，创建VAO/VBO/IBO
+  - `render_earth(vp, camera_pos)`: 顶面贴纹理+Blinn-Phong光照，侧面纯色
+  - 世界尺寸: 7.0×7.0×0.5
+- Updated `renderer3d/shaders.py`: 添加 PLATE_VERTEX/FRAGMENT_SHADER
+  - Blinn-Phong: 方向光+镜面反射+环境光
+  - 支持纹理/纯色切换 (`u_use_texture`)
+- Updated `main.py`: `_render_3d()` 使用 PlateRenderer3D
+- **Tests**: 160/160 passed, 3D地盘渲染集成测试通过
+
+### Subproject 3D-4: 天盘3D几何体
+- Extended `renderer3d/plate_renderer.py`:
+  - Constructor now accepts `heaven_surface` (破坏性API变更)
+  - 创建圆柱VAO/VBO/IBO (64段, radius=2.1, depth=0.3)
+  - `render_heaven(vp, camera_pos, angle_deg)`: 模型矩阵=Y旋转+Y平移(0.9)，顶面贴纹理，底面/侧面HEAVEN_SIDE_COLOR
+  - `update_heaven_texture(surface)`: 排盘后更新天盘纹理
+  - 天盘Y位置: EARTH_DEPTH/2 + HEAVEN_Y_OFFSET + HEAVEN_DEPTH/2 = 0.9
+  - 天盘材质: shininess=48 (漆器光泽)
+- Added `create_heaven_plate_3d()` to `main.py`:
+  - 预渲染完整天盘纹理（背景圆+结构线+北斗+月将+二十八宿+天将）
+  - 不含convex lighting（由shader Blinn-Phong代替）
+  - 排盘前：无天将；布将动画完成后重建纹理含天将
+  - `heaven_3d_needs_update` dirty flag控制纹理更新时机
+- Updated `_render_3d()`: 地盘渲染后紧接天盘渲染
+- Updated `on_paipan()`: 设置dirty flag
+- Updated `update_generals_animation()`: 动画完成时触发3D纹理重建
+- **Tests**: 160/160 passed, 3D管线烟雾测试通过(多角度渲染+纹理更新)
+
+### Subproject 3D-5: 光照与材质（漆器美学）
+- **Already implemented in 3D-3/3D-4**:
+  - Blinn-Phong shader (PLATE_FRAGMENT_SHADER): 方向光+镜面反射+环境光
+  - 地盘 shininess=12 (木质), 天盘 shininess=48 (漆器光泽)
+  - LIGHT_DIR: 左上方暖白光, AMBIENT: 暖暗环境光
+  - `u_use_texture`/`u_side_color` 区分纹理面和纯色侧面
+  - 地盘侧面: darkened COLOR_EARTH_BG, 天盘侧面: darkened COLOR_HEAVEN_BG
+
+### Subproject 3D-6: 盘间阴影
+- Added `create_disc_mesh(radius, segments)` to `renderer3d/geometry.py`:
+  - XZ平面圆盘，Y=0，法线+Y，圆形UV映射
+- Extended `renderer3d/shaders.py`:
+  - Added `uniform int u_unlit` to PLATE_FRAGMENT_SHADER
+  - `u_unlit==1` 时直接输出base color (bypass Blinn-Phong)
+- Extended `renderer3d/plate_renderer.py`:
+  - 阴影圆盘: SHADOW_RADIUS=2.415 (天盘1.15倍), SHADOW_Y=0.26 (地盘表面微上方)
+  - `_create_shadow_texture()`: 256px径向渐变 (中心alpha=120, 边缘透明)
+  - `render_shadow(vp)`: 无光照渲染阴影圆盘
+- Updated `main.py` `_render_3d()`: 地盘→阴影→天盘分层渲染
+- **Tests**: 160/160 passed
+
+### Subproject 3D-7: 3D高亮（四课三传）
+- Added `_highlight_3d(vp)` to `main.py`:
+  - 构建天盘model矩阵 (与render_heaven一致)
+  - 计算branch 3D世界坐标: mesh_angle = -(90 + idx*30)° (Pygame Y-flip适配)
+  - MVP投影: `clip = local @ mvp` (pyrr row-major)
+  - NDC→屏幕坐标转换
+  - 复用 `PlateHighlighter._draw_glow()` 绘制四课(金色)/三传(红/青)高亮
+  - 绘制三传连接线
+  - 背面裁剪: clip.w <= 0 时跳过
+- Updated `_render_3d()`: 3D surface blit后调用 `_highlight_3d(vp)`
+- **Tests**: 160/160 passed
+
+### Subproject 3D-8: 操控集成与模式切换完善
+- **Already implemented in 3D-1/3D-2**:
+  - Tab切换 + HUD模式显示
+  - 右键拖拽→轨道相机, 滚轮→缩放, 左键拖拽→天盘旋转(物理惯性)
+  - Home键→相机重置, Space/F5/F6/F7全模式通用
+
+### Subproject 3D-9: 性能优化与视觉打磨
+- Rewrote `renderer3d/context.py` for MSAA 4x:
+  - 多重采样渲染缓冲区 (color + depth, samples=4)
+  - 独立resolve FBO (非多重采样, 用于像素回读)
+  - `ctx.copy_framebuffer()` 执行MSAA resolve
+  - 优雅降级: try/except自动回退到标准渲染
+  - `end_frame()`: MSAA时先resolve再readback，否则直接readback
+- **Tests**: 160/160 passed, MSAA烟雾测试通过 ("MSAA 4x enabled")
 
 ---
 
-## Pending
+## Main Project 2 Checklist (式盘3D化) — ALL COMPLETE
 
-_(None - core features complete)_
+- [x] 3D-1: ModernGL上下文与Pygame集成
+- [x] 3D-2: 轨道相机
+- [x] 3D-3: 地盘3D几何体
+- [x] 3D-4: 天盘3D几何体
+- [x] 3D-5: 光照与材质（漆器美学）— 已在3D-3/3D-4中实现
+- [x] 3D-6: 盘间阴影
+- [x] 3D-7: 3D高亮（四课三传）
+- [x] 3D-8: 操控集成与模式切换完善 — 已在3D-1/3D-2中实现
+- [x] 3D-9: 性能优化与视觉打磨 — MSAA 4x
 
 ---
 
@@ -214,3 +334,12 @@ _(None - core features complete)_
 | 2026-02-06 | 20 | UI布局 | 输入面板移至侧边栏下方(830,640)，侧边栏高度缩减至600px，盘体完全不被遮挡 |
 | 2026-02-06 | Bug fix | 下拉菜单遮挡 | 修复下拉菜单被侧边栏遮挡：交换main.py绘制顺序(先sidebar后input_panel) |
 | 2026-02-06 | Bug fix | 天盘文字模糊 | 月将/二十八宿改为实时绘制，避免二次旋转模糊 |
+| 2026-02-06 | 3D-1 | GL上下文+Pygame集成 | renderer3d/包，GLContext (standalone+FBO readback)，Tab切换，160 tests pass |
+| 2026-02-06 | 3D-2 | 轨道相机 | OrbitCamera (球坐标)，右键拖拽/滚轮缩放/Home重置，160 tests pass |
+| 2026-02-06 | 3D-3 | 地盘3D几何体 | geometry/texture_manager/plate_renderer，方盒+纹理+Blinn-Phong，160 tests pass |
+| 2026-02-06 | 3D-4 | 天盘3D几何体 | 圆柱体+天盘纹理(月将/二十八宿/天将)+排盘纹理更新，160 tests pass |
+| 2026-02-06 | 3D-5 | 光照与材质 | 已在3D-3/3D-4中完成: Blinn-Phong shader, 地盘shininess=12(木), 天盘=48(漆) |
+| 2026-02-06 | 3D-6 | 盘间阴影 | disc_mesh+径向渐变纹理+u_unlit shader flag，地盘/阴影/天盘分层渲染，160 tests pass |
+| 2026-02-06 | 3D-7 | 3D高亮 | 3D→2D投影(pyrr MVP矩阵)，复用PlateHighlighter glow，四课/三传/连接线，160 tests pass |
+| 2026-02-06 | 3D-8 | 操控集成 | 已在3D-1/3D-2中完成: Tab切换/左右键/滚轮/Home/快捷键/物理惯性全部就绪 |
+| 2026-02-06 | 3D-9 | MSAA抗锯齿 | 多重采样FBO+resolve回读，4x MSAA优雅降级，160 tests pass |

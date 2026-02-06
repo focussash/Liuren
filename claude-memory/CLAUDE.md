@@ -22,18 +22,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 赛博大六壬 (Cyber Da Liu Ren) - A visualization of the ancient Chinese divination system "Da Liu Ren" styled after the Ruyin Marquis lacquer artifact. Built with Pygame, featuring an interactive rotating celestial plate (天盘) over a fixed earth plate (地盘).
 
-## Commands
+## Environment
 
+**CRITICAL**: This project uses a MiniConda virtual environment. **NEVER** install packages into native Python.
+
+```
+Virtual env: E:\MiniConda\envs\biomotum
+Python:      3.13.1
+```
+
+All commands MUST use the full venv Python path:
 ```bash
 # Run the application
-python main.py
+"E:\MiniConda\envs\biomotum\python.exe" main.py
 
-# Install dependencies
-pip install pygame>=2.1.0 sxtwl>=1.0.0 pytest
+# Install dependencies (INTO VENV ONLY)
+"E:\MiniConda\envs\biomotum\python.exe" -m pip install <package>
 
-# Run tests (when implemented)
-python -m pytest tests/ -v
+# Run tests
+"E:\MiniConda\envs\biomotum\python.exe" -m pytest tests/ -v
 ```
+
+**Current dependencies**: pygame, cnlunar, pytest, moderngl, pyrr, numpy
+
+## Permissions
+
+- **Bash**: You may run ALL bash commands freely (dangerously skip permissions) **UNLESS** you are deleting files/folders or installing non-Python things. Tests, pip installs into venv, running the app, git commands, etc. are all fine without asking.
+- **File edits**: Proceed freely for implementation work.
 
 ## Architecture
 
