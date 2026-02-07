@@ -1426,3 +1426,194 @@ python -m pytest tests/test_integration.py -v
 python main.py
 # Tab键切换2D/3D模式
 ```
+
+---
+---
+
+# Main Project 3: 3D视觉美化
+
+## 项目概述
+
+在已完成的3D模式基础上进行视觉美化（**仅3D模式，2D模式不动**）：
+1. 天盘从平面圆柱改为穹顶半球（类似出土漆器实物）
+2. 北斗七星从平面纹理改为3D空间中悬浮的发光星座
+3. 二十八星宿作为发光点环绕在天盘上方
+4. 四圣兽（青龙/白虎/朱雀/玄武）以星座连线形式环绕
+
+**设计决策**:
+- 穹顶纹理贴弧面（彩绘漆碗风格）
+- 星星风格：发光点+星座连线（天象图效果）
+- 四圣兽：28宿中每组7星用颜色连线组成轮廓
+- 盘面文字全部保留不变（3D装饰是额外叠加）
+- 所有天体装饰物随天盘一起旋转
+
+## 新增项目结构
+
+```
+Liuren/
+├── renderer3d/
+│   ├── celestial.py         # [新建] 天体装饰渲染器（星点+星座连线）
+│   ├── geometry.py          # [修改] 新增穹顶网格生成
+│   ├── shaders.py           # [修改] 新增billboard+line shader
+│   ├── plate_renderer.py    # [修改] 天盘改用穹顶
+│   └── __init__.py          # [修改] 导出CelestialRenderer3D
+├── main.py                  # [修改] 集成天体渲染器, 修复highlight Y坐标
+```
+
+---
+
+# 子项目 3D-10: 穹顶天盘几何体
+
+## 目标
+将天盘从平面圆柱改为穹顶形状（球冠顶面+短圆柱边缘+平底），纹理通过正交投影UV映射到弧面。
+
+## 实现内容
+
+### renderer3d/geometry.py — 新增 `create_dome_mesh()`
+```python
+def create_dome_mesh(radius, dome_height, rim_height, rings=24, segments=64):
+    """穹顶网格：球冠顶面 + 圆柱边缘 + 平底面。
+    Returns: (vertices, indices, dome_index_count)
+    """
+```
+
+**穹顶面参数化**（抛物面近似 `y = h*(1 - t²)`）：
+- 同心环 `i=0..rings`，角度细分 `j=0..segments`
+- `t = i / rings`（0=中心, 1=边缘）
+- 位置: `(radius*t*cos(θ), dome_height*(1-t²), radius*t*sin(θ))`
+- UV正交投影: `u = 0.5 + 0.5*cos(θ)*t`, `v = 0.5 + 0.5*sin(θ)*t`
+- 法线: 从抛物面梯度解析计算并归一化
+
+**短圆柱边缘（rim）**：穹顶边缘(y=0)到底面(y=-rim_height)
+**平底面**：y=-rim_height
+**索引分区**：穹顶面在前（贴纹理），边缘+底面在后（侧色）
+
+### renderer3d/plate_renderer.py — 修改
+- 新常量: `DOME_HEIGHT = 0.45`, `RIM_HEIGHT = 0.15`
+- 构造函数: `create_cylinder_mesh` → `create_dome_mesh`
+- 导出 `DOME_HEIGHT` 供 `_highlight_3d` 使用
+- 新增 `get_heaven_model(angle_deg)` 方法（供后续celestial renderer共享模型矩阵）
+
+### main.py — 修改 `_highlight_3d()`
+- 高亮Y坐标从平顶 `HEAVEN_DEPTH/2` 改为穹顶面高度:
+  `highlight_y = DOME_HEIGHT * (1 - (r/R)²)`
+
+## 关键参数
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| DOME_HEIGHT | 0.45 | 半径21%弧度，文字不过度扭曲 |
+| RIM_HEIGHT | 0.15 | 短边缘，漆碗唇口感 |
+| rings | 24 | 平滑弧面 |
+| segments | 64 | 与现有圆柱一致 |
+
+## 验证标准
+- 天盘显示穹顶形状，有可见弧度
+- 纹理正确映射到弧面
+- Blinn-Phong高光在弧面上正确移动
+- `_highlight_3d` 高亮跟随穹顶面
+- 2D模式不变，160 tests pass
+
+## 关键文件
+- 修改: `renderer3d/geometry.py`, `renderer3d/plate_renderer.py`, `main.py`
+
+---
+
+# 子项目 3D-11: 天体渲染器 + 北斗七星3D星座
+
+## 目标
+创建 `CelestialRenderer3D` 类，渲染悬浮在穹顶上方的发光星点和星座连线。首个实现：北斗七星。
+
+## 实现内容
+
+### renderer3d/shaders.py — 新增4个shader
+- **BILLBOARD_VERTEX_SHADER**: model变换星点中心位置，camera_right/up展开billboard四边形
+- **GLOW_FRAGMENT_SHADER**: 高斯衰减发光 `glow = exp(-dist²*3.0)`
+- **LINE_VERTEX_SHADER**: MVP变换 + per-vertex颜色
+- **LINE_FRAGMENT_SHADER**: 直通颜色输出
+
+### renderer3d/celestial.py — 新建
+```python
+class CelestialRenderer3D:
+    def __init__(self, ctx, dome_height, heaven_radius):
+        # 编译shader，创建北斗VAO/VBO
+    def render(self, vp_matrix, model_matrix, camera_right, camera_up):
+        # 关闭深度写入，渲染连线(alpha blend)→星点(additive blend)
+    def release(self):
+```
+
+### 北斗七星3D坐标
+2D像素坐标→3D: `scale = HEAVEN_RADIUS / 210px`，Y = 穹顶面高度 + 悬浮间距(0.35)
+连线: handle 0→1→2→3, bowl 3→4→5→6
+
+### 渲染管线集成 (main.py)
+在 `_render_3d()` 中，render_heaven 之后、end_frame 之前:
+```python
+heaven_model = self.plate_renderer.get_heaven_model(-self.angle)
+view = self.camera.get_view_matrix()
+camera_right, camera_up = view[0,:3], view[1,:3]  # pyrr行主序
+self.celestial_renderer.render(vp, heaven_model, camera_right, camera_up)
+```
+
+混合策略: 关闭深度写入 → 连线(alpha blend) → 星点(additive blend) → 恢复
+
+## 关键参数
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| STAR_FLOAT_HEIGHT | 0.35 | 穹顶上方悬浮高度 |
+| 北斗星点半径 | 0.08 | 相机距离12时清晰可见 |
+| 中心星(idx 3) | 0.12 | 勺柄-勺身交汇，稍大 |
+| 星点颜色 | (0.9, 0.7, 0.3) | 金色 |
+| 连线颜色 | (0.7, 0.24, 0.24, 0.6) | 半透明暗红 |
+
+## 验证标准
+- 7个金色发光星点悬浮在穹顶上方
+- 星座连线可见
+- Billboard始终面向相机
+- 随天盘旋转，60FPS
+
+## 关键文件
+- 新建: `renderer3d/celestial.py`
+- 修改: `renderer3d/shaders.py`, `renderer3d/__init__.py`, `main.py`
+
+---
+
+# 子项目 3D-12: 二十八星宿 + 四圣兽星座
+
+## 目标
+在穹顶上方添加28个星宿发光点环绕成环，用四色连线将每组7星连成四圣兽星座。
+
+## 实现内容
+
+### 28星宿星点
+- 位置: 88%半径处，360/28间距，起始90°
+- 浮空高度: 0.25（比北斗0.35低，层次感）
+- 星点更小(0.05)更暗(0.8强度)
+
+### 四圣兽连线
+ORDERED_XIU_R中每组7星顺序连线:
+- 东方青龙(蓝): 角亢氐房心尾箕 → 索引[10,9,8,7,6,5,4]
+- 北方玄武(紫): 斗牛女虚危室壁 → 索引[3,2,1,0,27,26,25]
+- 西方白虎(白): 奎娄胃昴毕觜参 → 索引[24,23,22,21,20,19,18]
+- 南方朱雀(红): 井鬼柳星张翼轸 → 索引[17,16,15,14,13,12,11]
+
+颜色: 青龙(0.2,0.5,0.9) / 白虎(0.85,0.85,0.9) / 朱雀(0.85,0.25,0.2) / 玄武(0.3,0.25,0.6)
+
+### 扩展 CelestialRenderer3D
+新增28宿StarGroup + 4个LineGroup
+
+## 验证标准
+- 28星点形成均匀环形
+- 4组彩色连线连接各自7星
+- 与北斗共存，层次分明
+- 随天盘旋转，60FPS
+
+## 关键文件
+- 修改: `renderer3d/celestial.py`
+
+---
+
+# Main Project 3 依赖关系
+
+```
+3D-10 (穹顶几何体) → 3D-11 (天体渲染器+北斗) → 3D-12 (28宿+四圣兽)
+```

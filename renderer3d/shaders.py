@@ -109,3 +109,76 @@ void main() {
     fragColor = vec4(color, alpha);
 }
 """
+
+# --- Celestial shaders (3D-11+) ---
+
+BILLBOARD_VERTEX_SHADER = """
+#version 330
+
+uniform mat4 u_vp;
+uniform mat4 u_model;
+uniform vec3 u_camera_right;
+uniform vec3 u_camera_up;
+uniform float u_size;
+
+in vec3 in_position;
+in vec2 in_offset;
+
+out vec2 v_uv;
+
+void main() {
+    vec4 world_center = u_model * vec4(in_position, 1.0);
+    vec3 world_pos = world_center.xyz
+                   + u_camera_right * in_offset.x * u_size
+                   + u_camera_up * in_offset.y * u_size;
+    gl_Position = u_vp * vec4(world_pos, 1.0);
+    v_uv = in_offset * 0.5 + 0.5;
+}
+"""
+
+GLOW_FRAGMENT_SHADER = """
+#version 330
+
+uniform vec3 u_color;
+uniform float u_intensity;
+
+in vec2 v_uv;
+out vec4 fragColor;
+
+void main() {
+    float dist = length(v_uv - 0.5) * 2.0;
+    float glow = exp(-dist * dist * 3.0);
+    float alpha = glow * u_intensity;
+    if (alpha < 0.01) discard;
+    fragColor = vec4(u_color * glow, alpha);
+}
+"""
+
+LINE_VERTEX_SHADER = """
+#version 330
+
+uniform mat4 u_vp;
+uniform mat4 u_model;
+
+in vec3 in_position;
+in vec4 in_color;
+
+out vec4 v_color;
+
+void main() {
+    vec4 world = u_model * vec4(in_position, 1.0);
+    gl_Position = u_vp * world;
+    v_color = in_color;
+}
+"""
+
+LINE_FRAGMENT_SHADER = """
+#version 330
+
+in vec4 v_color;
+out vec4 fragColor;
+
+void main() {
+    fragColor = v_color;
+}
+"""

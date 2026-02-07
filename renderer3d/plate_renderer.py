@@ -5,7 +5,7 @@ import numpy as np
 import pygame
 from pyrr import matrix44, Vector3
 
-from .geometry import create_box_mesh, create_cylinder_mesh, create_disc_mesh
+from .geometry import create_box_mesh, create_dome_mesh, create_disc_mesh
 from .shaders import PLATE_VERTEX_SHADER, PLATE_FRAGMENT_SHADER
 from .texture_manager import TextureManager
 
@@ -16,8 +16,9 @@ EARTH_HEIGHT = 7.0
 EARTH_DEPTH = 0.5       # thickness of earth plate slab
 
 HEAVEN_RADIUS = 2.1
-HEAVEN_DEPTH = 0.3       # thickness of heaven disc
-HEAVEN_Y_OFFSET = 0.5    # gap above earth plate top surface
+DOME_HEIGHT = 1.0         # height of dome cap above base
+RIM_HEIGHT = 0.15         # height of cylindrical rim below base
+HEAVEN_Y_OFFSET = 0.5     # gap above earth plate top surface
 
 # Light direction: from upper-left-front (matching existing convex lighting)
 LIGHT_DIR = np.array([-0.5, -1.0, -0.3], dtype='f4')
@@ -73,10 +74,9 @@ class PlateRenderer3D:
         # Earth model matrix: centered at origin, top face at Y = EARTH_DEPTH/2
         self.earth_model = matrix44.create_identity(dtype='f4')
 
-        # --- Heaven plate geometry ---
-        heaven_segments = 64
-        heaven_verts, heaven_idx = create_cylinder_mesh(
-            HEAVEN_RADIUS, HEAVEN_DEPTH, heaven_segments
+        # --- Heaven plate geometry (dome) ---
+        heaven_verts, heaven_idx, dome_idx_count = create_dome_mesh(
+            HEAVEN_RADIUS, DOME_HEIGHT, RIM_HEIGHT
         )
         heaven_vbo = ctx.buffer(heaven_verts.tobytes())
         heaven_ibo = ctx.buffer(heaven_idx.tobytes())
@@ -86,13 +86,14 @@ class PlateRenderer3D:
             heaven_ibo
         )
         self.heaven_index_count = len(heaven_idx)
-        self.heaven_top_index_count = heaven_segments * 3  # top face fan triangles
+        self.heaven_top_index_count = dome_idx_count  # dome cap (textured)
 
         # Heaven plate texture
         self.heaven_texture = self.tex_manager.surface_to_texture(heaven_surface, 'heaven')
 
-        # Pre-compute heaven Y position (above earth plate top surface)
-        self.heaven_y = EARTH_DEPTH / 2 + HEAVEN_Y_OFFSET + HEAVEN_DEPTH / 2
+        # Pre-compute heaven Y position: dome base sits at this world Y
+        # (dome extends from heaven_y - rim_height to heaven_y + dome_height)
+        self.heaven_y = EARTH_DEPTH / 2 + HEAVEN_Y_OFFSET + RIM_HEIGHT
 
         # --- Shadow disc ---
         shadow_verts, shadow_idx = create_disc_mesh(SHADOW_RADIUS)
@@ -146,21 +147,24 @@ class PlateRenderer3D:
         self.prog['u_side_color'].write(EARTH_SIDE_COLOR.tobytes())
         self.earth_vao.render(vertices=self.earth_index_count - 6, first=6)
 
+    def get_heaven_model(self, angle_deg):
+        """Return the heaven plate model matrix for the given angle."""
+        angle_rad = float(np.radians(angle_deg))
+        rotation = matrix44.create_from_y_rotation(angle_rad, dtype='f4')
+        translation = matrix44.create_from_translation(
+            Vector3([0.0, self.heaven_y, 0.0]), dtype='f4'
+        )
+        return matrix44.multiply(rotation, translation)
+
     def render_heaven(self, vp_matrix, camera_pos, angle_deg):
-        """Render the heaven plate disc at the given rotation angle.
+        """Render the heaven plate dome at the given rotation angle.
 
         Args:
             vp_matrix: View-projection matrix
             camera_pos: Camera position for specular
             angle_deg: Rotation angle in degrees (around Y axis)
         """
-        # Build model matrix: rotate around Y, then translate up
-        angle_rad = float(np.radians(angle_deg))
-        rotation = matrix44.create_from_y_rotation(angle_rad, dtype='f4')
-        translation = matrix44.create_from_translation(
-            Vector3([0.0, self.heaven_y, 0.0]), dtype='f4'
-        )
-        model = matrix44.multiply(rotation, translation)
+        model = self.get_heaven_model(angle_deg)
 
         self.prog['u_model'].write(model.tobytes())
         self.prog['u_vp'].write(vp_matrix.astype('f4').tobytes())

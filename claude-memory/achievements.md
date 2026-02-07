@@ -303,6 +303,66 @@ Progress tracking for 赛博大六壬 四课三传系统
 
 ---
 
+## Completed (Main Project 3: 3D视觉美化)
+
+### Subproject 3D-10: 穹顶天盘几何体
+- Added `create_dome_mesh(radius, dome_height, rim_height, rings, segments)` to `renderer3d/geometry.py`:
+  - 抛物面穹顶 `y = h*(1-t²)` + 短圆柱边缘 + 平底面
+  - UV正交投影映射（与圆柱顶面UV一致，纹理无缝衔接）
+  - 法线从抛物面梯度解析计算
+  - 返回 `(vertices, indices, dome_index_count)` 三元组
+  - 1793 vertices, 9600 indices (dome: 9024, rim+bottom: 576)
+- Modified `renderer3d/plate_renderer.py`:
+  - 新常量: `DOME_HEIGHT=0.45`, `RIM_HEIGHT=0.15` (替代 `HEAVEN_DEPTH=0.3`)
+  - `create_cylinder_mesh` → `create_dome_mesh`
+  - 新增 `get_heaven_model(angle_deg)` 方法（模型矩阵供外部共享）
+  - `heaven_y = EARTH_DEPTH/2 + HEAVEN_Y_OFFSET + RIM_HEIGHT = 0.9`
+- Modified `main.py` `_highlight_3d()`:
+  - 高亮Y坐标从平顶改为穹顶面 `DOME_HEIGHT * (1 - (r/R)²)`
+  - 使用 `plate_renderer.get_heaven_model()` 消除重复矩阵计算
+- **Tests**: 160/160 passed, 穹顶管线烟雾测试通过
+
+### Subproject 3D-11: 天体渲染器 + 北斗七星3D星座
+- Added 4 GLSL shaders to `renderer3d/shaders.py`:
+  - `BILLBOARD_VERTEX_SHADER`: u_model变换中心→camera_right/up展开billboard
+  - `GLOW_FRAGMENT_SHADER`: 高斯衰减 `exp(-d²*3)` 发光效果
+  - `LINE_VERTEX_SHADER/FRAGMENT_SHADER`: MVP变换+per-vertex颜色直通
+- Created `renderer3d/celestial.py`:
+  - `CelestialRenderer3D(ctx, dome_height, heaven_radius)` 类
+  - 北斗七星: 7个冷白色billboard星点 + 6段暗红连线
+  - 中心星(idx 3)单独渲染更大更亮 (size=0.12, intensity=1.56)
+  - `_dome_y(x,z)` 计算穹顶面高度，星点悬浮其上0.35
+  - `render()`: 关闭深度写入→连线(alpha blend)→星点(additive blend)→恢复
+  - StarGroup/LineGroup字典存储VAO/参数，支持3D-12扩展
+- Modified `main.py`:
+  - 初始化 `CelestialRenderer3D` 在 `PlateRenderer3D` 之后
+  - `_render_3d()`: 天盘渲染后调用 `celestial_renderer.render()`
+  - 从view矩阵列(columns)提取 `camera_right/up` (pyrr create_look_at列主序)
+  - 退出时 `celestial_renderer.release()`
+- Updated `renderer3d/__init__.py`: 导出 `CelestialRenderer3D`
+- **Bug fixes**:
+  - Billboard方向: view矩阵基向量在列(columns)而非行(rows)
+  - 星点颜色: (0.9,0.7,0.3)金色→(0.95,0.95,1.0)冷白色
+  - 坐标翻转: `z = -py * scale` (Pygame Y-down → GL Y-up)
+- **Tests**: 160/160 passed, 天体渲染管线烟雾测试通过 (2 star groups + 1 line group)
+
+### Subproject 3D-12: 二十八星宿 + 四圣兽星座
+- Extended `renderer3d/celestial.py`:
+  - `_build_xiu_28()`: 28个暗金色星点环形排列 + 4组圣兽连线
+  - 28宿位置: 88%半径, 每隔12.857°, 起始90° (匹配2D纹理角度)
+  - `z = -radius * sin(angle)` (Y-flip pattern与北斗一致)
+  - 穹顶面高度 + XIU_FLOAT_HEIGHT(0.25) 悬浮高度(比北斗低)
+  - 星点: size=0.05, color=(0.65,0.52,0.32)暗金, intensity=0.8
+  - 四圣兽连线 (每组7星6段):
+    - 东方青龙: 角亢氐房心尾箕 → 青蓝色(0.2,0.5,0.9)
+    - 北方玄武: 斗牛女虚危室壁 → 深紫色(0.3,0.25,0.6)
+    - 西方白虎: 奎娄胃昴毕觜参 → 银白色(0.85,0.85,0.9)
+    - 南方朱雀: 井鬼柳星张翼轸 → 朱红色(0.85,0.25,0.2)
+- No changes to main.py needed (render pipeline handles all groups generically)
+- **Tests**: 160/160 passed, 烟雾测试通过 (3 star groups + 5 line groups)
+
+---
+
 ## Main Project 2 Checklist (式盘3D化) — ALL COMPLETE
 
 - [x] 3D-1: ModernGL上下文与Pygame集成
@@ -314,6 +374,12 @@ Progress tracking for 赛博大六壬 四课三传系统
 - [x] 3D-7: 3D高亮（四课三传）
 - [x] 3D-8: 操控集成与模式切换完善 — 已在3D-1/3D-2中实现
 - [x] 3D-9: 性能优化与视觉打磨 — MSAA 4x
+
+## Main Project 3 Checklist (3D视觉美化)
+
+- [x] 3D-10: 穹顶天盘几何体
+- [x] 3D-11: 天体渲染器 + 北斗七星3D星座
+- [x] 3D-12: 二十八星宿 + 四圣兽星座
 
 ---
 
@@ -343,3 +409,6 @@ Progress tracking for 赛博大六壬 四课三传系统
 | 2026-02-06 | 3D-7 | 3D高亮 | 3D→2D投影(pyrr MVP矩阵)，复用PlateHighlighter glow，四课/三传/连接线，160 tests pass |
 | 2026-02-06 | 3D-8 | 操控集成 | 已在3D-1/3D-2中完成: Tab切换/左右键/滚轮/Home/快捷键/物理惯性全部就绪 |
 | 2026-02-06 | 3D-9 | MSAA抗锯齿 | 多重采样FBO+resolve回读，4x MSAA优雅降级，160 tests pass |
+| 2026-02-06 | 3D-10 | 穹顶天盘 | create_dome_mesh(抛物面+rim+底), 替换圆柱, get_heaven_model(), highlight适配, 160 tests pass |
+| 2026-02-06 | 3D-11 | 天体渲染器+北斗 | CelestialRenderer3D, billboard+glow+line shaders, 北斗七星7星+6线, additive blend, 3 bug fixes (billboard方向/颜色/Y-flip), 160 tests pass |
+| 2026-02-06 | 3D-12 | 28宿+四圣兽 | 28暗金星点环+4色圣兽连线(青龙蓝/玄武紫/白虎白/朱雀红), 3 star groups + 5 line groups, 160 tests pass |

@@ -23,7 +23,7 @@ from lunar_calendar.ganzhi import get_day_ganzhi, get_hour_branch
 from ui import InputPanel, PlateHighlighter, ResultSidebar
 
 # 导入3D渲染模块
-from renderer3d import GLContext, OrbitCamera, PlateRenderer3D
+from renderer3d import GLContext, OrbitCamera, PlateRenderer3D, CelestialRenderer3D
 
 
 class CyberLiuren:
@@ -88,6 +88,10 @@ class CyberLiuren:
         self.heaven_3d_needs_update = False
         self.plate_renderer = PlateRenderer3D(
             self.gl_context.ctx, self.earth_surf, self.heaven_surf_3d
+        )
+        from renderer3d.plate_renderer import DOME_HEIGHT as _DH, HEAVEN_RADIUS as _HR
+        self.celestial_renderer = CelestialRenderer3D(
+            self.gl_context.ctx, _DH, _HR
         )
         self.right_dragging = False
         self.last_right_mouse_pos = (0, 0)
@@ -630,21 +634,18 @@ class CyberLiuren:
         if not self.current_plate or not self.current_lessons:
             return
 
-        from renderer3d.plate_renderer import HEAVEN_RADIUS, HEAVEN_DEPTH
+        from renderer3d.plate_renderer import HEAVEN_RADIUS, DOME_HEIGHT
 
         # Build heaven plate model matrix (matching render_heaven)
-        angle_rad = float(np.radians(-self.angle))
-        rotation = matrix44.create_from_y_rotation(angle_rad, dtype='f4')
-        translation = matrix44.create_from_translation(
-            Vector3([0.0, self.plate_renderer.heaven_y, 0.0]), dtype='f4'
-        )
-        model = matrix44.multiply(rotation, translation)
+        model = self.plate_renderer.get_heaven_model(-self.angle)
         mvp = matrix44.multiply(model, vp)
 
         viewport_w = self.plate_area_width
         viewport_h = WINDOW_SIZE[1]
         r_highlight = HEAVEN_RADIUS * 0.65
-        half_depth = HEAVEN_DEPTH / 2
+        # Highlight Y sits on the dome surface at this radius
+        t = r_highlight / HEAVEN_RADIUS  # = 0.65
+        highlight_y = DOME_HEIGHT * (1.0 - t * t)
 
         def branch_to_screen(branch):
             """Project a branch position on the heaven plate to screen coords."""
@@ -653,7 +654,7 @@ class CyberLiuren:
             mesh_angle = math.radians(-(90 + idx * 30))
             local = np.array([
                 r_highlight * math.cos(mesh_angle),
-                half_depth,
+                highlight_y,
                 r_highlight * math.sin(mesh_angle),
                 1.0
             ], dtype='f4')
@@ -710,7 +711,14 @@ class CyberLiuren:
         self.plate_renderer.render_shadow(vp)
 
         # C. 天盘（悬浮在地盘上方，随self.angle旋转）
+        heaven_model = self.plate_renderer.get_heaven_model(-self.angle)
         self.plate_renderer.render_heaven(vp, camera_pos, -self.angle)
+
+        # D. 天体装饰（穹顶上方，随天盘旋转）
+        view = self.camera.get_view_matrix()
+        camera_right = np.array(view[:3, 0], dtype='f4')  # column 0 = right
+        camera_up = np.array(view[:3, 1], dtype='f4')     # column 1 = up
+        self.celestial_renderer.render(vp, heaven_model, camera_right, camera_up)
 
         surface_3d = self.gl_context.end_frame()
 
@@ -863,6 +871,7 @@ class CyberLiuren:
             pygame.display.flip()
             self.clock.tick(FPS)
 
+        self.celestial_renderer.release()
         self.plate_renderer.release()
         self.gl_context.release()
         pygame.quit()
