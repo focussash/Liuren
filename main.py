@@ -26,6 +26,11 @@ from ui import InputPanel, PlateHighlighter, ResultSidebar
 from renderer3d import GLContext, OrbitCamera, PlateRenderer3D, CelestialRenderer3D
 
 
+def ease_out_cubic(t):
+    """Ease-out cubic: decelerating curve."""
+    return 1.0 - (1.0 - t) ** 3
+
+
 class CyberLiuren:
     def __init__(self):
         pygame.init()
@@ -79,6 +84,22 @@ class CyberLiuren:
         self.generals_visible_count = 0  # 当前显示的天将数量 (0-12)
         self.generals_animation_timer = 0
         self.generals_animation_interval = 100  # 每个天将间隔100ms
+
+        # --- 四课三传高亮动画 ---
+        self.highlight_anim_active = False
+        self.highlight_anim_start = 0
+        self.highlight_lesson_interval = 300    # ms per lesson
+        self.highlight_pass_interval = 400      # ms per pass
+        self.highlight_popin_duration = 200     # ms pop-in scale effect
+        self.highlight_visible_lessons = 0      # 0-4
+        self.highlight_visible_passes = 0       # 0-3
+
+        # --- 3D星宿升起动画 ---
+        self.celestial_rise = 1.0        # 0.0~1.0, 星宿升起进度
+        self.beast_alpha = 1.0           # 0.0~1.0, 圣兽淡入
+        self.rise_anim_start = None      # 动画开始时间(ticks), None=无动画
+        self.RISE_DURATION = 2000        # ms
+        self.BEAST_FADE_DURATION = 500   # ms
 
         # --- 3D模式 ---
         self.mode_3d = False
@@ -172,7 +193,10 @@ class CyberLiuren:
         # 9. 启动布将动画
         self.start_generals_animation()
 
-        # 10. 标记3D天盘纹理需更新（等布将动画完成后重建）
+        # 10. 启动四课三传高亮动画
+        self.start_highlight_animation()
+
+        # 11. 标记3D天盘纹理需更新（等布将动画完成后重建）
         self.heaven_3d_needs_update = True
 
         print(f"排盘完成: {day_stem}{day_branch}日 {hour_branch}时 月将{moon_general}({moon_general_name}) 课体:{self.current_lesson_type}")
@@ -215,6 +239,48 @@ class CyberLiuren:
                 self.heaven_surf_3d = self.create_heaven_plate_3d()
                 self.plate_renderer.update_heaven_texture(self.heaven_surf_3d)
                 self.heaven_3d_needs_update = False
+
+    def start_highlight_animation(self):
+        """开始四课三传高亮动画"""
+        self.highlight_anim_active = True
+        self.highlight_visible_lessons = 0
+        self.highlight_visible_passes = 0
+        self.highlight_anim_start = pygame.time.get_ticks()
+
+    def update_highlight_animation(self):
+        """更新四课三传高亮动画"""
+        if not self.highlight_anim_active:
+            return
+        elapsed = pygame.time.get_ticks() - self.highlight_anim_start
+        total_lessons = len(self.current_lessons)
+        lessons_done_time = total_lessons * self.highlight_lesson_interval
+
+        self.highlight_visible_lessons = min(total_lessons,
+                                             elapsed // self.highlight_lesson_interval)
+        if elapsed > lessons_done_time:
+            pass_elapsed = elapsed - lessons_done_time
+            total_passes = len(self.current_passes)
+            self.highlight_visible_passes = min(total_passes,
+                                                 pass_elapsed // self.highlight_pass_interval)
+            if pass_elapsed >= total_passes * self.highlight_pass_interval + self.highlight_popin_duration:
+                self.highlight_anim_active = False
+                self.highlight_visible_lessons = total_lessons
+                self.highlight_visible_passes = total_passes
+
+    def get_popin_scale(self, item_index, is_pass=False):
+        """返回 0.0（未出现）~ 1.0（到位）的缩放因子"""
+        if not self.highlight_anim_active:
+            return 1.0
+        elapsed = pygame.time.get_ticks() - self.highlight_anim_start
+        if is_pass:
+            appear_time = (len(self.current_lessons) * self.highlight_lesson_interval
+                           + item_index * self.highlight_pass_interval)
+        else:
+            appear_time = item_index * self.highlight_lesson_interval
+        if elapsed < appear_time:
+            return 0.0
+        t = min((elapsed - appear_time) / self.highlight_popin_duration, 1.0)
+        return 0.3 + 0.7 * ease_out_cubic(t)
 
     def draw_generals(self, screen, angle_offset):
         """
@@ -617,12 +683,16 @@ class CyberLiuren:
 
         # D. 高亮四课三传（如果有盘局）
         if self.current_plate and self.current_lessons:
+            self.update_highlight_animation()
             angle_offset = math.radians(self.angle)
+            lesson_scales = [self.get_popin_scale(i) for i in range(len(self.current_lessons))]
+            pass_scales = [self.get_popin_scale(i, is_pass=True) for i in range(len(self.current_passes))]
+            vis_l = self.highlight_visible_lessons if self.highlight_anim_active else len(self.current_lessons)
+            vis_p = self.highlight_visible_passes if self.highlight_anim_active else len(self.current_passes)
             self.highlighter.highlight_all(
-                self.screen,
-                self.current_lessons,
-                self.current_passes,
-                angle_offset
+                self.screen, self.current_lessons, self.current_passes, angle_offset,
+                visible_lessons=vis_l, visible_passes=vis_p,
+                lesson_scales=lesson_scales, pass_scales=pass_scales
             )
 
     def _highlight_3d(self, vp):
@@ -666,23 +736,36 @@ class CyberLiuren:
             sy = (1 - ndc[1]) / 2 * viewport_h
             return (int(sx), int(sy))
 
+        # Animation visibility
+        vis_l = self.highlight_visible_lessons if self.highlight_anim_active else len(self.current_lessons)
+        vis_p = self.highlight_visible_passes if self.highlight_anim_active else len(self.current_passes)
+
         # Highlight four lessons (gold)
-        for lesson in self.current_lessons:
+        for i, lesson in enumerate(self.current_lessons):
+            if i >= vis_l:
+                break
+            scale = self.get_popin_scale(i)
             pos = branch_to_screen(lesson.heaven)
             if pos:
-                self.highlighter._draw_glow(self.screen, pos, (255, 200, 100, 120), size=15)
+                self.highlighter._draw_glow(self.screen, pos, (255, 200, 100, 120),
+                                            size=15, scale=scale)
 
         # Highlight three passes (initial=red, others=cyan)
         for i, p in enumerate(self.current_passes):
+            if i >= vis_p:
+                break
             color = (255, 100, 100, 180) if i == 0 else (100, 200, 255, 150)
+            scale = self.get_popin_scale(i, is_pass=True)
             pos = branch_to_screen(p.branch)
             if pos:
-                self.highlighter._draw_glow(self.screen, pos, color, size=15)
+                self.highlighter._draw_glow(self.screen, pos, color,
+                                            size=15, scale=scale)
 
-        # Connection lines between passes
-        if len(self.current_passes) >= 2:
+        # Connection lines between visible passes only
+        visible_passes = self.current_passes[:vis_p]
+        if len(visible_passes) >= 2:
             points = []
-            for p in self.current_passes:
+            for p in visible_passes:
                 pos = branch_to_screen(p.branch)
                 if pos:
                     points.append(pos)
@@ -690,8 +773,27 @@ class CyberLiuren:
                 pygame.draw.line(self.screen, (150, 200, 255, 100),
                                  points[i], points[i + 1], 2)
 
+    def _update_rise_animation(self):
+        """更新星宿升起动画"""
+        if self.rise_anim_start is None:
+            return
+        elapsed = pygame.time.get_ticks() - self.rise_anim_start
+        # Phase 1: stars rise (0 ~ RISE_DURATION)
+        t = min(elapsed / self.RISE_DURATION, 1.0)
+        self.celestial_rise = ease_out_cubic(t)
+        # Phase 2: beasts fade in (RISE_DURATION ~ RISE_DURATION + BEAST_FADE_DURATION)
+        if elapsed > self.RISE_DURATION:
+            bt = min((elapsed - self.RISE_DURATION) / self.BEAST_FADE_DURATION, 1.0)
+            self.beast_alpha = bt
+        # Animation complete
+        if elapsed > self.RISE_DURATION + self.BEAST_FADE_DURATION:
+            self.celestial_rise = 1.0
+            self.beast_alpha = 1.0
+            self.rise_anim_start = None
+
     def _render_3d(self):
         """3D渲染路径"""
+        self._update_rise_animation()
         aspect = self.plate_area_width / WINDOW_SIZE[1]
         vp = self.camera.get_vp_matrix(aspect)
         camera_pos = self.camera.get_eye_position()
@@ -718,7 +820,9 @@ class CyberLiuren:
         view = self.camera.get_view_matrix()
         camera_right = np.array(view[:3, 0], dtype='f4')  # column 0 = right
         camera_up = np.array(view[:3, 1], dtype='f4')     # column 1 = up
-        self.celestial_renderer.render(vp, heaven_model, camera_right, camera_up)
+        self.celestial_renderer.render(vp, heaven_model, camera_right, camera_up,
+                                       rise_factor=self.celestial_rise,
+                                       beast_alpha=self.beast_alpha)
 
         surface_3d = self.gl_context.end_frame()
 
@@ -726,6 +830,7 @@ class CyberLiuren:
         self.screen.blit(surface_3d, (0, 0))
 
         # D. 高亮四课三传（2D overlay，投影到屏幕坐标）
+        self.update_highlight_animation()
         self._highlight_3d(vp)
 
         # 天将动画仍需更新（即使不在2D中渲染）
@@ -802,6 +907,11 @@ class CyberLiuren:
                             self.auto_paipan()
                     elif event.key == pygame.K_TAB:
                         self.mode_3d = not self.mode_3d
+                        if self.mode_3d:
+                            # 触发星宿升起动画
+                            self.celestial_rise = 0.0
+                            self.beast_alpha = 0.0
+                            self.rise_anim_start = pygame.time.get_ticks()
                         print(f"Mode: {'3D' if self.mode_3d else '2D'}")
                     elif event.key == pygame.K_F5:
                         self.save_screenshot()

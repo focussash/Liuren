@@ -120,6 +120,7 @@ uniform mat4 u_model;
 uniform vec3 u_camera_right;
 uniform vec3 u_camera_up;
 uniform float u_size;
+uniform float u_rise;
 
 in vec3 in_position;
 in vec2 in_offset;
@@ -127,7 +128,9 @@ in vec2 in_offset;
 out vec2 v_uv;
 
 void main() {
-    vec4 world_center = u_model * vec4(in_position, 1.0);
+    vec3 pos = in_position;
+    pos.y *= u_rise;
+    vec4 world_center = u_model * vec4(pos, 1.0);
     vec3 world_pos = world_center.xyz
                    + u_camera_right * in_offset.x * u_size
                    + u_camera_up * in_offset.y * u_size;
@@ -159,6 +162,7 @@ LINE_VERTEX_SHADER = """
 
 uniform mat4 u_vp;
 uniform mat4 u_model;
+uniform float u_rise;
 
 in vec3 in_position;
 in vec4 in_color;
@@ -166,7 +170,9 @@ in vec4 in_color;
 out vec4 v_color;
 
 void main() {
-    vec4 world = u_model * vec4(in_position, 1.0);
+    vec3 pos = in_position;
+    pos.y *= u_rise;
+    vec4 world = u_model * vec4(pos, 1.0);
     gl_Position = u_vp * world;
     v_color = in_color;
 }
@@ -175,10 +181,12 @@ void main() {
 LINE_FRAGMENT_SHADER = """
 #version 330
 
+uniform float u_alpha;
+
 in vec4 v_color;
 out vec4 fragColor;
 
 void main() {
-    fragColor = v_color;
+    fragColor = vec4(v_color.rgb, v_color.a * u_alpha);
 }
 """

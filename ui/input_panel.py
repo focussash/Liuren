@@ -15,6 +15,52 @@ COLOR_DROPDOWN_HOVER = (60, 55, 45)
 COLOR_BORDER = (100, 85, 60)
 
 
+class TextInput:
+    """数字文本输入框组件"""
+
+    def __init__(self, x: int, y: int, width: int, height: int,
+                 placeholder: str, font: pygame.font.Font, max_length: int = 4):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.placeholder = placeholder
+        self.font = font
+        self.max_length = max_length
+        self.text = ""
+        self.focused = False
+
+    def get_text(self) -> str:
+        return self.text
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.focused = self.rect.collidepoint(event.pos)
+            return self.focused
+
+        if event.type == pygame.KEYDOWN and self.focused:
+            if event.key == pygame.K_BACKSPACE:
+                self.text = self.text[:-1]
+                return True
+            elif event.key == pygame.K_TAB or event.key == pygame.K_RETURN:
+                return False  # let parent handle tab/enter
+            elif event.unicode.isdigit() and len(self.text) < self.max_length:
+                self.text += event.unicode
+                return True
+
+        return False
+
+    def draw(self, screen: pygame.Surface):
+        bg = (50, 45, 38) if self.focused else COLOR_DROPDOWN_BG
+        pygame.draw.rect(screen, bg, self.rect, border_radius=3)
+        border = COLOR_BUTTON_TEXT if self.focused else COLOR_BORDER
+        pygame.draw.rect(screen, border, self.rect, width=1, border_radius=3)
+
+        if self.text:
+            surf = self.font.render(self.text, True, COLOR_BUTTON_TEXT)
+        else:
+            surf = self.font.render(self.placeholder, True, (100, 90, 70))
+        rect = surf.get_rect(midleft=(self.rect.x + 5, self.rect.centery))
+        screen.blit(surf, rect)
+
+
 class Button:
     """按钮组件"""
 
@@ -240,6 +286,20 @@ class InputPanel:
         self.paipan_button = Button(x + 55, button_y, 50, 30, "排盘", font)
         self.instant_button = Button(x + 110, button_y, 70, 30, "即时起卦", font)
 
+        # --- 公历换算上拉菜单 ---
+        self.gregorian_expanded = False
+        self.toggle_button = Button(x + 185, y - 2, 60, 22, "▲ 公历", font)
+        self.toggle_button.set_callback(self._toggle_gregorian)
+
+        # 展开区域的文本输入框（位于面板上方）
+        expand_y = y - 55
+        self.year_input = TextInput(x, expand_y, 55, 26, "年", font, max_length=4)
+        self.month_input = TextInput(x + 60, expand_y, 40, 26, "月", font, max_length=2)
+        self.day_input = TextInput(x + 105, expand_y, 40, 26, "日", font, max_length=2)
+        self.hour_input = TextInput(x + 150, expand_y, 40, 26, "时", font, max_length=2)
+        self.convert_button = Button(x + 195, expand_y, 45, 26, "换算", font)
+        self.convert_button.set_callback(self._on_convert)
+
         # 回调
         self.on_paipan = None
         self.on_instant_paipan = None
@@ -254,6 +314,30 @@ class InputPanel:
         """设置即时起卦按钮回调"""
         self.on_instant_paipan = callback
         self.instant_button.set_callback(callback)
+
+    def _toggle_gregorian(self):
+        """切换公历输入区域展开/折叠"""
+        self.gregorian_expanded = not self.gregorian_expanded
+        self.toggle_button.text = "▼ 公历" if self.gregorian_expanded else "▲ 公历"
+
+    def _on_convert(self):
+        """公历换算为天干地支"""
+        from lunar_calendar.ganzhi import get_day_ganzhi, get_hour_branch
+
+        try:
+            year = int(self.year_input.get_text())
+            month = int(self.month_input.get_text())
+            day = int(self.day_input.get_text())
+            hour = int(self.hour_input.get_text())
+        except ValueError:
+            return  # 输入不完整，忽略
+
+        day_stem, day_branch = get_day_ganzhi(year, month, day)
+        hour_branch = get_hour_branch(hour)
+
+        self.day_stem_selector.set_value(day_stem)
+        self.day_branch_selector.set_value(day_branch)
+        self.hour_branch_selector.set_value(hour_branch)
 
     def _on_auto(self):
         """自动填入当前时间的干支"""
@@ -277,6 +361,18 @@ class InputPanel:
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         """处理事件"""
+        # 公历toggle按钮
+        if self.toggle_button.handle_event(event):
+            return True
+
+        # 公历展开区域的事件
+        if self.gregorian_expanded:
+            if self.convert_button.handle_event(event):
+                return True
+            for inp in (self.year_input, self.month_input, self.day_input, self.hour_input):
+                if inp.handle_event(event):
+                    return True
+
         # 按钮事件
         if self.auto_button.handle_event(event):
             return True
@@ -304,10 +400,25 @@ class InputPanel:
 
     def draw(self, screen: pygame.Surface):
         """绘制面板"""
-        # 绘制背景
+        # 绘制展开的公历区域背景
+        if self.gregorian_expanded:
+            expand_rect = pygame.Rect(self.x - 10, self.y - 70, 260, 65)
+            pygame.draw.rect(screen, COLOR_PANEL_BG, expand_rect, border_radius=8)
+            pygame.draw.rect(screen, COLOR_BORDER, expand_rect, width=1, border_radius=8)
+            # 绘制文本输入框和换算按钮
+            self.year_input.draw(screen)
+            self.month_input.draw(screen)
+            self.day_input.draw(screen)
+            self.hour_input.draw(screen)
+            self.convert_button.draw(screen)
+
+        # 绘制主面板背景
         panel_rect = pygame.Rect(self.x - 10, self.y - 5, 260, 125)
         pygame.draw.rect(screen, COLOR_PANEL_BG, panel_rect, border_radius=8)
         pygame.draw.rect(screen, COLOR_BORDER, panel_rect, width=1, border_radius=8)
+
+        # 绘制公历toggle按钮
+        self.toggle_button.draw(screen)
 
         # 绘制选择器（先绘制未展开的，再绘制展开的，确保展开的在上层）
         selectors = [self.day_stem_selector, self.day_branch_selector, self.hour_branch_selector]

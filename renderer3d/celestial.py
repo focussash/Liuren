@@ -337,7 +337,8 @@ class CelestialRenderer3D:
                     'vertex_count': len(line_verts),
                 })
 
-    def render(self, vp_matrix, model_matrix, camera_right, camera_up):
+    def render(self, vp_matrix, model_matrix, camera_right, camera_up,
+               rise_factor=1.0, beast_alpha=1.0):
         """Render all celestial objects.
 
         Args:
@@ -345,6 +346,8 @@ class CelestialRenderer3D:
             model_matrix: Heaven plate model matrix (f4)
             camera_right: Camera right vector in world space (f4, len 3)
             camera_up: Camera up vector in world space (f4, len 3)
+            rise_factor: 0.0~1.0, star/line Y position multiplier (rise animation)
+            beast_alpha: 0.0~1.0, beast outline opacity (fade-in animation)
         """
         ctx = self.ctx
 
@@ -360,11 +363,14 @@ class CelestialRenderer3D:
         ctx.blend_func = ctx.SRC_ALPHA, ctx.ONE_MINUS_SRC_ALPHA
         self.line_prog['u_vp'].write(vp_bytes)
         self.line_prog['u_model'].write(model_bytes)
+        self.line_prog['u_rise'].value = rise_factor
+        self.line_prog['u_alpha'].value = 1.0
 
         for lg in self.line_groups:
             lg['vao'].render(moderngl.LINES, vertices=lg['vertex_count'])
 
-        # --- Render beast outline lines (thicker) ---
+        # --- Render beast outline lines (thicker, with fade-in alpha) ---
+        self.line_prog['u_alpha'].value = beast_alpha
         ctx.line_width = 2.5
         for lg in self.beast_line_groups:
             lg['vao'].render(moderngl.LINES, vertices=lg['vertex_count'])
@@ -374,6 +380,7 @@ class CelestialRenderer3D:
         ctx.blend_func = ctx.SRC_ALPHA, ctx.ONE
         self.star_prog['u_vp'].write(vp_bytes)
         self.star_prog['u_model'].write(model_bytes)
+        self.star_prog['u_rise'].value = rise_factor
         self.star_prog['u_camera_right'].write(
             np.array(camera_right, dtype='f4').tobytes()
         )

@@ -86,7 +86,8 @@ class PlateHighlighter:
         self._draw_glow(screen, pos, color)
 
     def _draw_glow(self, screen: pygame.Surface, pos: Tuple[int, int],
-                   color: Tuple[int, int, int, int], size: int = 20):
+                   color: Tuple[int, int, int, int], size: int = 20,
+                   scale: float = 1.0):
         """
         绘制发光效果
 
@@ -95,7 +96,9 @@ class PlateHighlighter:
             pos: 中心位置
             color: RGBA颜色
             size: 发光半径
+            scale: 缩放因子（0.0~1.0），用于pop-in动画
         """
+        size = max(1, int(size * scale))
         # 创建临时surface用于alpha混合
         glow_surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
 
@@ -109,7 +112,8 @@ class PlateHighlighter:
         screen.blit(glow_surf, (pos[0] - size, pos[1] - size), special_flags=pygame.BLEND_RGBA_ADD)
 
     def highlight_lessons(self, screen: pygame.Surface, lessons: List[Lesson],
-                         angle_offset: float = 0):
+                         angle_offset: float = 0, visible_count=None,
+                         scales=None):
         """
         高亮四课位置
 
@@ -117,14 +121,20 @@ class PlateHighlighter:
             screen: pygame屏幕
             lessons: 四课列表
             angle_offset: 天盘旋转偏移量
+            visible_count: 当前可见的课数（None=全部显示）
+            scales: 每课的缩放因子列表（None=全部1.0）
         """
-        for lesson in lessons:
-            # 高亮天盘位置（上神）
-            self.highlight_branch(screen, lesson.heaven, COLOR_LESSON_HIGHLIGHT,
-                                 angle_offset, 0.65)
+        count = len(lessons) if visible_count is None else visible_count
+        for i, lesson in enumerate(lessons):
+            if i >= count:
+                break
+            scale = 1.0 if scales is None else scales[i]
+            pos = self.get_branch_position(lesson.heaven, angle_offset, 0.65)
+            self._draw_glow(screen, pos, COLOR_LESSON_HIGHLIGHT, scale=scale)
 
     def highlight_passes(self, screen: pygame.Surface, passes: List[Pass],
-                        angle_offset: float = 0):
+                        angle_offset: float = 0, visible_count=None,
+                        scales=None):
         """
         高亮三传位置
 
@@ -132,18 +142,24 @@ class PlateHighlighter:
             screen: pygame屏幕
             passes: 三传列表
             angle_offset: 天盘旋转偏移量
+            visible_count: 当前可见的传数（None=全部显示）
+            scales: 每传的缩放因子列表（None=全部1.0）
         """
+        count = len(passes) if visible_count is None else visible_count
         for i, p in enumerate(passes):
+            if i >= count:
+                break
             if i == 0:
-                # 初传用特殊颜色
                 color = COLOR_INITIAL_PASS
             else:
                 color = COLOR_PASS_HIGHLIGHT
 
-            self.highlight_branch(screen, p.branch, color, angle_offset, 0.65)
+            scale = 1.0 if scales is None else scales[i]
+            pos = self.get_branch_position(p.branch, angle_offset, 0.65)
+            self._draw_glow(screen, pos, color, scale=scale)
 
     def draw_connection_lines(self, screen: pygame.Surface, passes: List[Pass],
-                             angle_offset: float = 0):
+                             angle_offset: float = 0, visible_count=None):
         """
         绘制三传之间的连接线
 
@@ -151,18 +167,23 @@ class PlateHighlighter:
             screen: pygame屏幕
             passes: 三传列表
             angle_offset: 天盘旋转偏移量
+            visible_count: 当前可见的传数（None=全部显示）
         """
-        if len(passes) < 2:
+        count = len(passes) if visible_count is None else visible_count
+        visible_passes = passes[:count]
+        if len(visible_passes) < 2:
             return
 
-        points = [self.get_branch_position(p.branch, angle_offset, 0.65) for p in passes]
+        points = [self.get_branch_position(p.branch, angle_offset, 0.65) for p in visible_passes]
 
         # 绘制连接线
         for i in range(len(points) - 1):
             pygame.draw.line(screen, (150, 200, 255, 100), points[i], points[i + 1], 2)
 
     def highlight_all(self, screen: pygame.Surface, lessons: List[Lesson],
-                     passes: List[Pass], angle_offset: float = 0):
+                     passes: List[Pass], angle_offset: float = 0,
+                     visible_lessons=None, visible_passes=None,
+                     lesson_scales=None, pass_scales=None):
         """
         高亮所有四课三传位置
 
@@ -171,10 +192,17 @@ class PlateHighlighter:
             lessons: 四课列表
             passes: 三传列表
             angle_offset: 天盘旋转偏移量
+            visible_lessons: 可见四课数（None=全部）
+            visible_passes: 可见三传数（None=全部）
+            lesson_scales: 四课缩放因子列表
+            pass_scales: 三传缩放因子列表
         """
         # 先绘制四课（底层）
-        self.highlight_lessons(screen, lessons, angle_offset)
+        self.highlight_lessons(screen, lessons, angle_offset,
+                              visible_count=visible_lessons, scales=lesson_scales)
         # 再绘制三传（顶层）
-        self.highlight_passes(screen, passes, angle_offset)
+        self.highlight_passes(screen, passes, angle_offset,
+                             visible_count=visible_passes, scales=pass_scales)
         # 绘制连接线
-        self.draw_connection_lines(screen, passes, angle_offset)
+        self.draw_connection_lines(screen, passes, angle_offset,
+                                  visible_count=visible_passes)
