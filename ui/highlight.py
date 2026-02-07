@@ -86,7 +86,7 @@ class PlateHighlighter:
         self._draw_glow(screen, pos, color)
 
     def _draw_glow(self, screen: pygame.Surface, pos: Tuple[int, int],
-                   color: Tuple[int, int, int, int], size: int = 25):
+                   color: Tuple[int, int, int, int], size: int = 20):
         """
         绘制发光效果
 

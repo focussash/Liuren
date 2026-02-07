@@ -86,7 +86,7 @@ class GLContext:
             [(vbo, '3f 3f', 'in_position', 'in_color')]
         )
 
-    def begin_frame(self, clear_color=(0.08, 0.08, 0.09, 1.0)):
+    def begin_frame(self, clear_color=(0.04, 0.06, 0.18, 1.0)):
         """Bind FBO and clear for a new frame."""
         self.fbo.use()
         self.ctx.clear(*clear_color)

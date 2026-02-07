@@ -1612,8 +1612,134 @@ ORDERED_XIU_R中每组7星顺序连线:
 
 ---
 
+# 子项目 3D-13: 星宿数据模块 + 圣兽轮廓数据
+
+## 目标
+创建独立的星图数据模块，包含28宿多星座数据和四圣兽详细轮廓数据，配套完整测试。
+
+## 实现内容
+
+### renderer3d/xiu_data.py — 新建
+- `MansionData(NamedTuple)`: 星宿数据（name, star_offsets, lines）
+- `BeastOutline(NamedTuple)`: 圣兽轮廓（name, vertices, lines, color）
+- 28宿各星座的多星位置和内部连线（锚星+组件星）
+- `ALL_MANSIONS_ORDERED`: 按 ORDERED_XIU_R 顺序排列的28宿数据
+- `BEAST_QUADRANTS`: 四象限星宿索引
+- `BEAST_OUTLINES`: 四圣兽详细轮廓数据（~58-66顶点/58-62线段）
+
+### tests/test_xiu_data.py — 新建
+- 28宿数量/名称/星数/线段索引/偏移范围验证
+- 四圣兽顶点/线段/颜色/范围验证
+- 四象限覆盖完整性验证
+- 430 tests total
+
+## 关键文件
+- 新建: `renderer3d/xiu_data.py`, `tests/test_xiu_data.py`
+
+---
+
+# 子项目 3D-14: 28宿多星座渲染
+
+## 目标
+将28宿从单星点扩展为多星座（每宿2-8星+内部连线），使用 xiu_data 数据。
+
+## 实现内容
+
+### renderer3d/celestial.py — 重写 `_build_xiu_28()`
+- 每个星宿按 `star_offsets` 放置多颗组件星（锥面投影高度）
+- 锚星（首星）单独渲染更大更亮
+- 星宿内部连线（`mansion.lines`）用冷灰色半透明渲染
+- 组件星: size=0.07, 暗金色
+- 锚星: size=0.10, 更亮 (intensity=1.8)
+
+## 关键文件
+- 修改: `renderer3d/celestial.py`, `renderer3d/xiu_data.py`
+
+---
+
+# 子项目 3D-15: 四圣兽精细化轮廓
+
+## 目标
+将四圣兽从简单7星连线改为独立的精细轮廓画（双轮廓体积感+内部细节），使用 xiu_data 中的 BEAST_OUTLINES 数据。
+
+## 实现内容
+
+### renderer3d/celestial.py — 新增 `_build_beast_outlines()`
+- 从 `BEAST_OUTLINES` 读取顶点和线段数据
+- 各顶点通过锥面投影到3D空间（r_frac→高度映射）
+- 四色渲染：青龙蓝/玄武紫/白虎白/朱雀红
+- 独立 `beast_line_groups` 列表，渲染时 `ctx.line_width=2.5`
+
+### 四圣兽设计
+| 圣兽 | 顶点 | 线段 | 关键特征 |
+|------|------|------|----------|
+| 青龙 | 65 | 58 | 双轮廓蛇身、开口颚、双角、鬃毛、脊鳍、三趾爪×4、火叉尾 |
+| 玄武 | 70 | 62 | 8点甲壳+十字网纹、蹼足×4、蛇双轮廓缠绕、分叉舌、鳞纹 |
+| 白虎 | 58 | 58 | 圆脸三角耳、肌肉背腹双轮廓、虎纹×4、完整四腿+爪、S形叉尾 |
+| 朱雀 | 66 | 62 | 头冠羽×4、鼓胸双轮廓、三层翅羽、七根扇尾、凤眼斑、爪趾 |
+
+## 关键文件
+- 修改: `renderer3d/celestial.py`, `renderer3d/xiu_data.py`
+
+---
+
+# 子项目 3D-16: 视觉微调（高亮/天空/亮度）
+
+## 目标
+根据视觉反馈进行三项微调。
+
+## 实现内容
+
+### 1. 高亮球缩小
+- `ui/highlight.py`: `_draw_glow` 默认 size 25→20（2D微缩）
+- `main.py`: 3D高亮传 size=15（3D明显更小）
+
+### 2. 3D背景深蓝星空
+- `renderer3d/context.py`: clear_color → (0.04, 0.06, 0.18)（深蓝星空色）
+
+### 3. 四圣兽亮度提升 + 线条加粗
+- `renderer3d/xiu_data.py`: 四圣兽颜色alpha 0.85→1.0，RGB提亮
+- `renderer3d/celestial.py`: beast_line_groups 独立渲染，ctx.line_width=2.5
+
+## 关键文件
+- 修改: `ui/highlight.py`, `main.py`, `renderer3d/context.py`, `renderer3d/xiu_data.py`, `renderer3d/celestial.py`
+
+---
+
+# 子项目 3D-17: 星层分离 + 2D旋转修复 + 北斗增大
+
+## 目标
+修复三个视觉/交互问题。
+
+## 实现内容
+
+### 1. 星点浮在圣兽上方
+- `renderer3d/celestial.py`: 新增 `XIU_STAR_LIFT = 0.45`
+- 28宿星点Y坐标整体抬升0.45，从圣兽轮廓高度范围(0.44~0.84)上方渲染(0.89~1.05)
+- 星点不再被圣兽线条遮挡
+
+### 2. 2D天盘旋转方向修复
+- **Bug**: `pygame.transform.rotate(surf, -α)` 产生CW视觉旋转，但文字公式 `math.radians(-α)` 在pygame y-down坐标系产生CCW视觉旋转，导致北斗与文字/高亮反向
+- **Fix**: 保持surface用 `-self.angle`（拖拽方向正确），将三处文字/高亮的angle_offset从 `math.radians(-self.angle)` 改为 `math.radians(self.angle)`
+- 修改: `draw_heaven_text()`, `draw_generals()`, highlight `angle_offset`
+
+### 3. 3D北斗七星增大增亮
+- `renderer3d/celestial.py`:
+  - BEIDOU_STAR_SIZE: 0.08→0.14 (+75%)
+  - BEIDOU_CENTER_SIZE: 0.12→0.20 (+67%)
+  - BEIDOU_INTENSITY: 1.2→1.8 (+50%)
+  - BEIDOU_STAR_COLOR: 冷白→暖金白 (1.0, 0.95, 0.8)
+  - BEIDOU_LINE_COLOR: 更亮红 (0.8, 0.3, 0.3, 0.7)
+
+## 关键文件
+- 修改: `renderer3d/celestial.py`, `main.py`
+
+---
+
 # Main Project 3 依赖关系
 
 ```
-3D-10 (穹顶几何体) → 3D-11 (天体渲染器+北斗) → 3D-12 (28宿+四圣兽)
+3D-10 (穹顶几何体) → 3D-11 (天体渲染器+北斗) → 3D-12 (28宿+四圣兽基础)
+                                                       ↓
+3D-13 (星宿数据模块) → 3D-14 (多星座渲染) → 3D-15 (圣兽精细化) → 3D-16 (视觉微调) → 3D-17 (修复)
 ```

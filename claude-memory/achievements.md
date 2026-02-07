@@ -361,6 +361,63 @@ Progress tracking for 赛博大六壬 四课三传系统
 - No changes to main.py needed (render pipeline handles all groups generically)
 - **Tests**: 160/160 passed, 烟雾测试通过 (3 star groups + 5 line groups)
 
+### Subproject 3D-13: 星宿数据模块 + 圣兽轮廓数据
+- Created `renderer3d/xiu_data.py`:
+  - `MansionData(NamedTuple)`: 星宿数据类（name, star_offsets, lines）
+  - `BeastOutline(NamedTuple)`: 圣兽轮廓数据类（name, vertices, lines, color）
+  - 28宿完整多星座数据（dr/dtheta偏移 + 内部连线）
+  - `ALL_MANSIONS_ORDERED`: 按 ORDERED_XIU_R 顺序排列
+  - `BEAST_QUADRANTS`: 四象限星宿索引映射
+  - `BEAST_OUTLINES`: 四圣兽轮廓数据（初版~27-30V/25-31L）
+- Created `tests/test_xiu_data.py`:
+  - TestMansionCount: 28宿数量/名称/类型/唯一性
+  - TestStarCounts: 每宿星数验证 + 总星数
+  - TestLineIndices: 线段索引范围/无自环/至少一线
+  - TestStarOffsets: dr/dtheta范围 + 锚星近原点
+  - TestBeastOutlines: 4兽/类型/顶点线段下限/索引/颜色/坐标范围
+  - TestBeastQuadrants: 4象限/7宿/索引范围/覆盖28宿/中文名
+- **Tests**: 430/430 passed (新增270 xiu_data tests)
+
+### Subproject 3D-14: 28宿多星座渲染
+- Rewrote `_build_xiu_28()` in `renderer3d/celestial.py`:
+  - 每宿按 star_offsets 放置多颗组件星（锥面高度投影）
+  - 组件星: XIU_STAR_SIZE=0.07, 白色, intensity=1.4
+  - 锚星: XIU_ANCHOR_SIZE=0.10, 白色, intensity=1.8（单独star group）
+  - 内部连线: 冷灰色(0.6,0.6,0.7,0.5)半透明
+- **Tests**: 430/430 passed
+
+### Subproject 3D-15: 四圣兽精细化轮廓（双轮廓法）
+- Rewrote `BEAST_OUTLINES` in `renderer3d/xiu_data.py` using double-contour technique:
+  - 青龙(65V/58L): 双轮廓蛇身、开口颚、双角、鬃毛3根、脊鳍4根、三趾爪×4、火叉尾
+  - 玄武(70V/62L): 8点甲壳+十字网纹(脊线+横纹+斜连)、蹼足×4、蛇双轮廓+分叉舌+鳞纹
+  - 白虎(58V/58L): 圆脸+三角耳、肌肉背腹双轮廓、虎纹×4、完整四腿(肩-肘-腕-爪+趾)、S形叉尾
+  - 朱雀(66V/62L): 头冠羽×4、鼓胸双轮廓、三层翅羽(初级/次级/覆羽)×2翼、七根扇尾+凤眼斑×2、爪趾
+- Updated `tests/test_xiu_data.py`: 顶点/线段下限从20/15提高到50/50
+- **Tests**: 430/430 passed
+
+### Subproject 3D-16: 视觉微调
+- **高亮球缩小**:
+  - `ui/highlight.py`: _draw_glow 默认 size 25→20（2D微缩）
+  - `main.py`: 3D高亮显式传 size=15（3D明显更小）
+- **3D背景深蓝星空**:
+  - `renderer3d/context.py`: clear_color (0.08,0.08,0.09)→(0.04,0.06,0.18) 深蓝
+- **四圣兽亮度提升+线条加粗**:
+  - `renderer3d/xiu_data.py`: 四色alpha 0.85→1.0, RGB各提亮10-15%
+  - `renderer3d/celestial.py`: beast_line_groups独立列表, ctx.line_width=2.5渲染
+- **Tests**: 430/430 passed
+
+### Subproject 3D-17: 星层分离 + 2D旋转修复 + 北斗增大
+- **星点浮在圣兽上方**:
+  - `renderer3d/celestial.py`: 新增 XIU_STAR_LIFT=0.45, 28宿Y坐标抬升，不被圣兽遮挡
+- **2D天盘旋转方向修复**:
+  - **Bug**: `pygame.transform.rotate` 正角=CCW，但pygame y-down三角函数正角=CW，两者用同一个 `-self.angle` 产生相反视觉旋转，导致北斗与文字/天将/高亮反向
+  - **Fix**: surface保持 `rotate(surf, -self.angle)`（拖拽方向正确），三处文字/高亮angle_offset改为 `math.radians(self.angle)`（视觉匹配surface方向）
+  - 修改: `main.py` 三处 `math.radians(-self.angle)` → `math.radians(self.angle)`
+- **3D北斗七星增大增亮**:
+  - BEIDOU_STAR_SIZE: 0.08→0.14, CENTER: 0.12→0.20, INTENSITY: 1.2→1.8
+  - 颜色: 冷白→暖金白(1.0,0.95,0.8), 连线更亮红(0.8,0.3,0.3,0.7)
+- **Tests**: 430/430 passed
+
 ---
 
 ## Main Project 2 Checklist (式盘3D化) — ALL COMPLETE
@@ -380,6 +437,11 @@ Progress tracking for 赛博大六壬 四课三传系统
 - [x] 3D-10: 穹顶天盘几何体
 - [x] 3D-11: 天体渲染器 + 北斗七星3D星座
 - [x] 3D-12: 二十八星宿 + 四圣兽星座
+- [x] 3D-13: 星宿数据模块 + 圣兽轮廓数据
+- [x] 3D-14: 28宿多星座渲染
+- [x] 3D-15: 四圣兽精细化轮廓
+- [x] 3D-16: 视觉微调（高亮/天空/亮度）
+- [x] 3D-17: 星层分离 + 2D旋转修复 + 北斗增大
 
 ---
 
@@ -412,3 +474,8 @@ Progress tracking for 赛博大六壬 四课三传系统
 | 2026-02-06 | 3D-10 | 穹顶天盘 | create_dome_mesh(抛物面+rim+底), 替换圆柱, get_heaven_model(), highlight适配, 160 tests pass |
 | 2026-02-06 | 3D-11 | 天体渲染器+北斗 | CelestialRenderer3D, billboard+glow+line shaders, 北斗七星7星+6线, additive blend, 3 bug fixes (billboard方向/颜色/Y-flip), 160 tests pass |
 | 2026-02-06 | 3D-12 | 28宿+四圣兽 | 28暗金星点环+4色圣兽连线(青龙蓝/玄武紫/白虎白/朱雀红), 3 star groups + 5 line groups, 160 tests pass |
+| 2026-02-07 | 3D-13 | 星宿数据模块 | xiu_data.py + test_xiu_data.py, 28宿多星座数据+四圣兽轮廓, 270新测试, 430 tests pass |
+| 2026-02-07 | 3D-14 | 28宿多星座渲染 | 重写_build_xiu_28(), 多星+锚星+内部连线, 430 tests pass |
+| 2026-02-07 | 3D-15 | 四圣兽精细化 | 双轮廓法重写4兽(65-70V/58-62L), 龙鬃蛇身+龟甲纹缠蛇+虎纹四腿+凤冠翅尾, 430 tests pass |
+| 2026-02-07 | 3D-16 | 视觉微调 | 高亮缩小(2D:20/3D:15), 天空深蓝(0.04,0.06,0.18), 兽亮度+1/线宽2.5, 430 tests pass |
+| 2026-02-07 | 3D-17 | 修复三项 | 星点抬升0.45不被兽挡, 2D旋转angle_offset符号修复(北斗与文字同步), 北斗增大(size+75%/intensity+50%), 430 tests pass |

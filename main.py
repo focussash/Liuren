@@ -609,15 +609,15 @@ class CyberLiuren:
         self.screen.blit(rotated_heaven, heaven_rect)
 
         # C1. 天盘文字（月将、二十八宿）- 实时绘制避免二次旋转模糊
-        self.draw_heaven_text(self.screen, math.radians(-self.angle))
+        self.draw_heaven_text(self.screen, math.radians(self.angle))
 
         # C2. 天将层（跟随天盘旋转）
         self.update_generals_animation()
-        self.draw_generals(self.screen, math.radians(-self.angle))
+        self.draw_generals(self.screen, math.radians(self.angle))
 
         # D. 高亮四课三传（如果有盘局）
         if self.current_plate and self.current_lessons:
-            angle_offset = math.radians(-self.angle)
+            angle_offset = math.radians(self.angle)
             self.highlighter.highlight_all(
                 self.screen,
                 self.current_lessons,
@@ -670,14 +670,14 @@ class CyberLiuren:
         for lesson in self.current_lessons:
             pos = branch_to_screen(lesson.heaven)
             if pos:
-                self.highlighter._draw_glow(self.screen, pos, (255, 200, 100, 120))
+                self.highlighter._draw_glow(self.screen, pos, (255, 200, 100, 120), size=15)
 
         # Highlight three passes (initial=red, others=cyan)
         for i, p in enumerate(self.current_passes):
             color = (255, 100, 100, 180) if i == 0 else (100, 200, 255, 150)
             pos = branch_to_screen(p.branch)
             if pos:
-                self.highlighter._draw_glow(self.screen, pos, color)
+                self.highlighter._draw_glow(self.screen, pos, color, size=15)
 
         # Connection lines between passes
         if len(self.current_passes) >= 2:

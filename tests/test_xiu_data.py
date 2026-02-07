@@ -125,11 +125,11 @@ class TestBeastOutlines:
 
     @pytest.mark.parametrize("key", ['dragon', 'tortoise', 'tiger', 'bird'])
     def test_beast_has_vertices(self, key):
-        assert len(BEAST_OUTLINES[key].vertices) >= 20
+        assert len(BEAST_OUTLINES[key].vertices) >= 50
 
     @pytest.mark.parametrize("key", ['dragon', 'tortoise', 'tiger', 'bird'])
     def test_beast_has_lines(self, key):
-        assert len(BEAST_OUTLINES[key].lines) >= 15
+        assert len(BEAST_OUTLINES[key].lines) >= 50
 
     @pytest.mark.parametrize("key", ['dragon', 'tortoise', 'tiger', 'bird'])
     def test_beast_line_indices_in_range(self, key):

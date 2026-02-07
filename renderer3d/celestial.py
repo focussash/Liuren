@@ -28,11 +28,11 @@ BEIDOU_LINES = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)]
 
 # Visual parameters
 STAR_FLOAT_HEIGHT = 0.35   # height above dome surface
-BEIDOU_STAR_SIZE = 0.08    # billboard half-size
-BEIDOU_CENTER_SIZE = 0.12  # center star (idx 3) larger
-BEIDOU_STAR_COLOR = (0.95, 0.95, 1.0)     # cool white
-BEIDOU_LINE_COLOR = (0.7, 0.24, 0.24, 0.6)  # semi-transparent dark red
-BEIDOU_INTENSITY = 1.2
+BEIDOU_STAR_SIZE = 0.14    # billboard half-size
+BEIDOU_CENTER_SIZE = 0.20  # center star (idx 3) larger
+BEIDOU_STAR_COLOR = (1.0, 0.95, 0.8)      # warm white-gold
+BEIDOU_LINE_COLOR = (0.8, 0.3, 0.3, 0.7)  # semi-transparent red
+BEIDOU_INTENSITY = 1.8
 
 # 二十八星宿 parameters (expanded ring outside dome)
 XIU_RING_RADIUS = 3.8       # star ring radius (well outside dome r=2.1)
@@ -44,6 +44,7 @@ XIU_STAR_COLOR = (0.95, 0.95, 1.0)   # bright white
 XIU_LINE_COLOR = (0.6, 0.6, 0.7, 0.5)  # internal lines (cool grey)
 XIU_INTENSITY = 1.4
 XIU_ANCHOR_INTENSITY = 1.8  # anchor stars brighter
+XIU_STAR_LIFT = 0.45        # lift stars above beast outlines
 
 # 四圣兽 3D cone draping: vertices at r_frac < 1 are higher, > 1 are lower
 BEAST_HEIGHT_RANGE = 0.8    # max height variation across beast outline
@@ -80,6 +81,7 @@ class CelestialRenderer3D:
         # Storage for star groups and line groups
         self.star_groups = []  # list of (vao, index_count, color, size, intensity)
         self.line_groups = []  # list of (vao, vertex_count)
+        self.beast_line_groups = []  # beast outlines (rendered thicker)
 
         # Build 北斗七星
         self._build_beidou()
@@ -210,7 +212,8 @@ class CelestialRenderer3D:
                 x = star_radius * math.cos(angle_rad)
                 z = -star_radius * math.sin(angle_rad)
                 # Cone slope: stars closer to center (negative dr) sit higher
-                y = XIU_RING_HEIGHT - dr * XIU_HEIGHT_SLOPE
+                # XIU_STAR_LIFT raises stars above beast outlines
+                y = XIU_RING_HEIGHT - dr * XIU_HEIGHT_SLOPE + XIU_STAR_LIFT
                 mansion_positions.append((x, y, z))
 
             # First star is the anchor
@@ -329,7 +332,7 @@ class CelestialRenderer3D:
                     self.line_prog,
                     [(lvbo, '3f 4f', 'in_position', 'in_color')],
                 )
-                self.line_groups.append({
+                self.beast_line_groups.append({
                     'vao': lvao,
                     'vertex_count': len(line_verts),
                 })
@@ -361,6 +364,12 @@ class CelestialRenderer3D:
         for lg in self.line_groups:
             lg['vao'].render(moderngl.LINES, vertices=lg['vertex_count'])
 
+        # --- Render beast outline lines (thicker) ---
+        ctx.line_width = 2.5
+        for lg in self.beast_line_groups:
+            lg['vao'].render(moderngl.LINES, vertices=lg['vertex_count'])
+        ctx.line_width = 1.0
+
         # --- Render star billboards (additive blend for glow) ---
         ctx.blend_func = ctx.SRC_ALPHA, ctx.ONE
         self.star_prog['u_vp'].write(vp_bytes)
@@ -390,6 +399,8 @@ class CelestialRenderer3D:
         for sg in self.star_groups:
             sg['vao'].release()
         for lg in self.line_groups:
+            lg['vao'].release()
+        for lg in self.beast_line_groups:
             lg['vao'].release()
         self.star_prog.release()
         self.line_prog.release()
