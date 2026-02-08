@@ -418,6 +418,22 @@ Progress tracking for 赛博大六壬 四课三传系统
   - 颜色: 冷白→暖金白(1.0,0.95,0.8), 连线更亮红(0.8,0.3,0.3,0.7)
 - **Tests**: 430/430 passed
 
+### Feature: 四课三传高亮动画
+- **动画时间轴**: 四课逐个出现(300ms间隔) → 三传逐个出现(400ms间隔)，每个球200ms pop-in缩放
+- **pop-in效果**: ease-out-cubic, 0.3x→1.0x缩放
+- **`main.py`**:
+  - 新增8个动画状态变量 (`highlight_anim_active`, `highlight_anim_start`, intervals, visible counts)
+  - `start_highlight_animation()` / `update_highlight_animation()` / `get_popin_scale()` 三个新方法
+  - `on_paipan()` 末尾触发动画
+  - 2D路径(`_render_2d`): 计算scales/visibility, 传参给 `highlight_all()`
+  - 3D路径(`_render_3d` + `_highlight_3d`): 同样逻辑, 3D投影glow也支持逐个出现+缩放
+- **`ui/highlight.py`**:
+  - `_draw_glow()`: 新增 `scale` 参数, size *= scale
+  - `highlight_lessons()` / `highlight_passes()`: 新增 `visible_count` + `scales` 参数
+  - `draw_connection_lines()`: 新增 `visible_count`, 只画已可见传的连线
+  - `highlight_all()`: 透传所有新参数, 默认None向后兼容
+- **Tests**: 430/430 passed (纯渲染改动, 无逻辑变更)
+
 ---
 
 ## Main Project 2 Checklist (式盘3D化) — ALL COMPLETE
@@ -479,3 +495,8 @@ Progress tracking for 赛博大六壬 四课三传系统
 | 2026-02-07 | 3D-15 | 四圣兽精细化 | 双轮廓法重写4兽(65-70V/58-62L), 龙鬃蛇身+龟甲纹缠蛇+虎纹四腿+凤冠翅尾, 430 tests pass |
 | 2026-02-07 | 3D-16 | 视觉微调 | 高亮缩小(2D:20/3D:15), 天空深蓝(0.04,0.06,0.18), 兽亮度+1/线宽2.5, 430 tests pass |
 | 2026-02-07 | 3D-17 | 修复三项 | 星点抬升0.45不被兽挡, 2D旋转angle_offset符号修复(北斗与文字同步), 北斗增大(size+75%/intensity+50%), 430 tests pass |
+| 2026-02-07 | Feature | 高亮动画 | 四课三传逐个pop-in(300/400ms间隔+200ms ease-out缩放), 2D+3D双路径, highlight.py新增scale/visible_count参数, 430 tests pass |
+| 2026-02-07 | UI优化 | 面板布局展宽 | 面板260→360px对齐侧边栏，选择器/按钮均匀分布，公历toggle改为纯箭头"▲"/"▼"(25px)移至右端，公历输入框展宽 |
+| 2026-02-07 | 验证 | 四圣兽位置确认 | 追踪完整坐标管线(mansion index→角度→3D世界→相机→FBO flip)，确认四兽位置正确：玄武=子(下)、朱雀=午(上)、青龙=卯(左)、白虎=酉(右) |
+| 2026-02-07 | Feature | 3D装饰龟 | geometry.py新增5个龟mesh函数(shell/head/leg/tail/hex), TurtleRenderer3D类(Blinn-Phong+线条shader), 渲染管线最前端, 430 tests pass |
+| 2026-02-07 | Feature | 详细推导面板 | liuren/derivation.py生成83行详细推导(月将/天盘/四课/三传/天将5部分), DerivationOverlay(700x700遮罩+滚动条), sidebar「详解」按钮, 430 tests pass |

@@ -41,6 +41,15 @@ class ResultSidebar:
         self.scroll_offset = 0
         self.content_height = 0
 
+        # 详解按钮
+        self.detail_btn_rect = pygame.Rect(0, 0, 45, 22)  # positioned dynamically
+        self.detail_btn_hovered = False
+        self.detail_callback = None
+
+    def set_detail_callback(self, callback):
+        """设置详解按钮回调"""
+        self.detail_callback = callback
+
     def set_plate(self, plate: LiurenPlate, lessons: List[Lesson],
                   passes: List[Pass], lesson_type: str):
         """
@@ -67,11 +76,19 @@ class ResultSidebar:
         self.scroll_offset = 0
 
     def handle_event(self, event: pygame.event.Event) -> bool:
-        """处理事件（主要是滚动）"""
+        """处理事件（主要是滚动和详解按钮）"""
+        if event.type == pygame.MOUSEMOTION:
+            self.detail_btn_hovered = self.detail_btn_rect.collidepoint(event.pos)
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.plate and self.detail_btn_rect.collidepoint(event.pos):
+                if self.detail_callback:
+                    self.detail_callback()
+                return True
+
         if event.type == pygame.MOUSEWHEEL:
             if self.rect.collidepoint(pygame.mouse.get_pos()):
                 self.scroll_offset -= event.y * 20
-                # 限制滚动范围
                 max_scroll = max(0, self.content_height - self.rect.height + 40)
                 self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
                 return True
@@ -220,11 +237,24 @@ class ResultSidebar:
 
     def _draw_derivation_log(self, screen: pygame.Surface, y: int,
                             clip_rect: pygame.Rect) -> int:
-        """绘制推导过程"""
+        """绘制推导过程 + 详解按钮"""
         if not self.plate.derivation_log:
             return y
 
         y = self._draw_section_title(screen, "【推导过程】", y, clip_rect)
+
+        # 详解按钮（在推导标题右侧）
+        btn_x = self.rect.x + self.rect.width - 60
+        btn_y = y - 28  # align with section title
+        self.detail_btn_rect = pygame.Rect(btn_x, btn_y, 45, 22)
+
+        if clip_rect.top <= btn_y <= clip_rect.bottom:
+            btn_color = (80, 70, 55) if self.detail_btn_hovered else (60, 50, 40)
+            pygame.draw.rect(screen, btn_color, self.detail_btn_rect, border_radius=4)
+            pygame.draw.rect(screen, COLOR_BORDER, self.detail_btn_rect, width=1, border_radius=4)
+            btn_text = self.small_font.render("详解", True, COLOR_ACCENT)
+            btn_text_rect = btn_text.get_rect(center=self.detail_btn_rect.center)
+            screen.blit(btn_text, btn_text_rect)
 
         for line in self.plate.derivation_log:
             if clip_rect.top <= y <= clip_rect.bottom - 20:

@@ -20,10 +20,10 @@ from liuren.constants import GENERAL_ORDER
 from lunar_calendar.ganzhi import get_day_ganzhi, get_hour_branch
 
 # 导入UI组件
-from ui import InputPanel, PlateHighlighter, ResultSidebar
+from ui import InputPanel, PlateHighlighter, ResultSidebar, DerivationOverlay
 
 # 导入3D渲染模块
-from renderer3d import GLContext, OrbitCamera, PlateRenderer3D, CelestialRenderer3D
+from renderer3d import GLContext, OrbitCamera, PlateRenderer3D, CelestialRenderer3D, TurtleRenderer3D
 
 
 def ease_out_cubic(t):
@@ -71,6 +71,8 @@ class CyberLiuren:
         self.input_panel.set_instant_paipan_callback(self.auto_paipan)
 
         self.sidebar = ResultSidebar(820, 20, 360, 600, self.hud_font)
+        self.derivation_overlay = DerivationOverlay(50, 50, 700, 700, self.hud_font)
+        self.sidebar.set_detail_callback(lambda: self.derivation_overlay.toggle())
         self.highlighter = PlateHighlighter(self.center, self.heaven_radius)
 
         # --- 当前盘局状态 ---
@@ -114,6 +116,7 @@ class CyberLiuren:
         self.celestial_renderer = CelestialRenderer3D(
             self.gl_context.ctx, _DH, _HR
         )
+        self.turtle_renderer = TurtleRenderer3D(self.gl_context.ctx)
         self.right_dragging = False
         self.last_right_mouse_pos = (0, 0)
 
@@ -179,7 +182,15 @@ class CyberLiuren:
             self.current_plate, self.current_lessons
         )
 
-        # 7. 更新侧边栏
+        # 7. 生成详细推导
+        from liuren.derivation import generate_detailed_derivation
+        detailed = generate_detailed_derivation(
+            self.current_plate, self.current_lessons,
+            self.current_passes, self.current_lesson_type
+        )
+        self.derivation_overlay.set_content(detailed)
+
+        # 8. 更新侧边栏
         self.sidebar.set_plate(
             self.current_plate,
             self.current_lessons,
@@ -187,16 +198,16 @@ class CyberLiuren:
             self.current_lesson_type
         )
 
-        # 8. 自动对齐天盘到当前时支
+        # 9. 自动对齐天盘到当前时支
         self.align_to_input(hour_branch, moon_general)
 
-        # 9. 启动布将动画
+        # 10. 启动布将动画
         self.start_generals_animation()
 
-        # 10. 启动四课三传高亮动画
+        # 11. 启动四课三传高亮动画
         self.start_highlight_animation()
 
-        # 11. 标记3D天盘纹理需更新（等布将动画完成后重建）
+        # 12. 标记3D天盘纹理需更新（等布将动画完成后重建）
         self.heaven_3d_needs_update = True
 
         print(f"排盘完成: {day_stem}{day_branch}日 {hour_branch}时 月将{moon_general}({moon_general_name}) 课体:{self.current_lesson_type}")
@@ -806,17 +817,20 @@ class CyberLiuren:
             self.gl_context.ctx.ONE_MINUS_SRC_ALPHA
         )
 
-        # A. 地盘
+        # A. 装饰龟（最底层）
+        self.turtle_renderer.render(vp, camera_pos)
+
+        # B. 地盘
         self.plate_renderer.render_earth(vp, camera_pos)
 
-        # B. 盘间阴影（地盘表面，天盘下方）
+        # C. 盘间阴影（地盘表面，天盘下方）
         self.plate_renderer.render_shadow(vp)
 
-        # C. 天盘（悬浮在地盘上方，随self.angle旋转）
+        # D. 天盘（悬浮在地盘上方，随self.angle旋转）
         heaven_model = self.plate_renderer.get_heaven_model(-self.angle)
         self.plate_renderer.render_heaven(vp, camera_pos, -self.angle)
 
-        # D. 天体装饰（穹顶上方，随天盘旋转）
+        # E. 天体装饰（穹顶上方，随天盘旋转）
         view = self.camera.get_view_matrix()
         camera_right = np.array(view[:3, 0], dtype='f4')  # column 0 = right
         camera_up = np.array(view[:3, 1], dtype='f4')     # column 1 = up
@@ -829,7 +843,7 @@ class CyberLiuren:
         # 将3D渲染结果blit到屏幕的plate区域
         self.screen.blit(surface_3d, (0, 0))
 
-        # D. 高亮四课三传（2D overlay，投影到屏幕坐标）
+        # F. 高亮四课三传（2D overlay，投影到屏幕坐标）
         self.update_highlight_animation()
         self._highlight_3d(vp)
 
@@ -843,6 +857,10 @@ class CyberLiuren:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                    continue
+
+                # 详解遮罩最优先
+                if self.derivation_overlay.handle_event(event):
                     continue
 
                 # UI事件优先处理
@@ -971,7 +989,10 @@ class CyberLiuren:
             self.sidebar.draw(self.screen)       # 先绘制侧边栏
             self.input_panel.draw(self.screen)   # 后绘制输入面板（下拉菜单在上层）
 
-            # F. HUD
+            # F. 详解遮罩（最上层）
+            self.derivation_overlay.draw(self.screen)
+
+            # G. HUD
             now = datetime.datetime.now()
             mode_str = "3D" if self.mode_3d else "2D"
             info_text = f"[{mode_str}] {now.strftime('%Y-%m-%d %H:%M')} | TAB: 切换模式 | SPACE: 自动归位 | F5: 截图"
@@ -981,6 +1002,7 @@ class CyberLiuren:
             pygame.display.flip()
             self.clock.tick(FPS)
 
+        self.turtle_renderer.release()
         self.celestial_renderer.release()
         self.plate_renderer.release()
         self.gl_context.release()

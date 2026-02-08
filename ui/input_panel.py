@@ -263,9 +263,9 @@ class InputPanel:
         self.open_upward = open_upward
 
         # 创建选择器
-        selector_width = 60
+        selector_width = 80
         selector_height = 30
-        spacing = 80
+        spacing = 130
 
         self.day_stem_selector = DropdownSelector(
             x, y + 25, selector_width, selector_height,
@@ -282,22 +282,22 @@ class InputPanel:
 
         # 创建按钮
         button_y = y + 75
-        self.auto_button = Button(x, button_y, 50, 30, "当前", font)
-        self.paipan_button = Button(x + 55, button_y, 50, 30, "排盘", font)
-        self.instant_button = Button(x + 110, button_y, 70, 30, "即时起卦", font)
+        self.auto_button = Button(x, button_y, 65, 30, "当前", font)
+        self.paipan_button = Button(x + 125, button_y, 65, 30, "排盘", font)
+        self.instant_button = Button(x + 250, button_y, 90, 30, "即时起卦", font)
 
         # --- 公历换算上拉菜单 ---
         self.gregorian_expanded = False
-        self.toggle_button = Button(x + 185, y - 2, 60, 22, "▲ 公历", font)
+        self.toggle_button = Button(x + 315, y - 2, 25, 22, "▲", font)
         self.toggle_button.set_callback(self._toggle_gregorian)
 
         # 展开区域的文本输入框（位于面板上方）
         expand_y = y - 55
-        self.year_input = TextInput(x, expand_y, 55, 26, "年", font, max_length=4)
-        self.month_input = TextInput(x + 60, expand_y, 40, 26, "月", font, max_length=2)
-        self.day_input = TextInput(x + 105, expand_y, 40, 26, "日", font, max_length=2)
-        self.hour_input = TextInput(x + 150, expand_y, 40, 26, "时", font, max_length=2)
-        self.convert_button = Button(x + 195, expand_y, 45, 26, "换算", font)
+        self.year_input = TextInput(x, expand_y, 65, 26, "年", font, max_length=4)
+        self.month_input = TextInput(x + 75, expand_y, 50, 26, "月", font, max_length=2)
+        self.day_input = TextInput(x + 135, expand_y, 50, 26, "日", font, max_length=2)
+        self.hour_input = TextInput(x + 195, expand_y, 50, 26, "时", font, max_length=2)
+        self.convert_button = Button(x + 270, expand_y, 70, 26, "换算", font)
         self.convert_button.set_callback(self._on_convert)
 
         # 回调
@@ -318,7 +318,7 @@ class InputPanel:
     def _toggle_gregorian(self):
         """切换公历输入区域展开/折叠"""
         self.gregorian_expanded = not self.gregorian_expanded
-        self.toggle_button.text = "▼ 公历" if self.gregorian_expanded else "▲ 公历"
+        self.toggle_button.text = "▼" if self.gregorian_expanded else "▲"
 
     def _on_convert(self):
         """公历换算为天干地支"""
@@ -402,7 +402,7 @@ class InputPanel:
         """绘制面板"""
         # 绘制展开的公历区域背景
         if self.gregorian_expanded:
-            expand_rect = pygame.Rect(self.x - 10, self.y - 70, 260, 65)
+            expand_rect = pygame.Rect(self.x - 10, self.y - 70, 360, 65)
             pygame.draw.rect(screen, COLOR_PANEL_BG, expand_rect, border_radius=8)
             pygame.draw.rect(screen, COLOR_BORDER, expand_rect, width=1, border_radius=8)
             # 绘制文本输入框和换算按钮
@@ -413,7 +413,7 @@ class InputPanel:
             self.convert_button.draw(screen)
 
         # 绘制主面板背景
-        panel_rect = pygame.Rect(self.x - 10, self.y - 5, 260, 125)
+        panel_rect = pygame.Rect(self.x - 10, self.y - 5, 360, 125)
         pygame.draw.rect(screen, COLOR_PANEL_BG, panel_rect, border_radius=8)
         pygame.draw.rect(screen, COLOR_BORDER, panel_rect, width=1, border_radius=8)
 

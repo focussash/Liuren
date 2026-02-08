@@ -30,7 +30,8 @@
       "Bash(\"E:\\\\MiniConda\\\\envs\\\\biomotum\\\\python.exe\" -m pytest:*)",
       "Bash(\"E:\\\\MiniConda\\\\envs\\\\biomotum\\\\python.exe\" -m pytest \"E:\\\\Random\\\\Pet_projects\\\\Liuren\\\\tests\" --tb=short -q)",
       "Bash(find:*)",
-      "Bash(\"E:\\\\MiniConda\\\\envs\\\\biomotum\\\\python.exe\" -c \"import py_compile; py_compile.compile\\(r''E:\\\\Random\\\\Pet_projects\\\\Liuren\\\\ui\\\\highlight.py'', doraise=True\\); py_compile.compile\\(r''E:\\\\Random\\\\Pet_projects\\\\Liuren\\\\main.py'', doraise=True\\); print\\(''Both files compile OK''\\)\")"
+      "Bash(\"E:\\\\MiniConda\\\\envs\\\\biomotum\\\\python.exe\" -c \"import py_compile; py_compile.compile\\(r''E:\\\\Random\\\\Pet_projects\\\\Liuren\\\\ui\\\\highlight.py'', doraise=True\\); py_compile.compile\\(r''E:\\\\Random\\\\Pet_projects\\\\Liuren\\\\main.py'', doraise=True\\); print\\(''Both files compile OK''\\)\")",
+      "Bash(\"E:\\\\MiniConda\\\\envs\\\\biomotum\\\\python.exe\" -m pytest \"E:\\\\Random\\\\Pet_projects\\\\Liuren\\\\tests\" -q)"
     ]
   }
 }

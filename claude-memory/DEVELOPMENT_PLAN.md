@@ -1743,3 +1743,45 @@ ORDERED_XIU_R中每组7星顺序连线:
                                                        ↓
 3D-13 (星宿数据模块) → 3D-14 (多星座渲染) → 3D-15 (圣兽精细化) → 3D-16 (视觉微调) → 3D-17 (修复)
 ```
+
+---
+
+# Feature: 3D装饰龟 (天圆地方/龟背图)
+
+## 目标
+在3D式盘下方放置一只装饰性的龟，寓意天圆地方、龟背负天。龟由实体壳(抛物面穹顶)、四肢、头、尾和壳面六角纹路组成。
+
+## 实现内容
+- `renderer3d/geometry.py`: 新增5个mesh生成函数
+  - `create_turtle_shell_mesh()`: 抛物面穹顶+平底+rim
+  - `create_turtle_head_mesh()`: 锥形头部
+  - `create_turtle_leg_mesh()`: 柱形短腿
+  - `create_turtle_tail_mesh()`: 锥形尾巴
+  - `create_turtle_hex_pattern()`: 壳面六角线条
+- `renderer3d/turtle.py`: TurtleRenderer3D类
+  - 复用PLATE_SHADER(Blinn-Phong) + LINE_SHADER
+  - 壳色(45,50,30)深橄榄, shininess=6(亚光)
+- `main.py`: 渲染管线最前端(depth test处理遮挡)
+
+## 关键文件
+- 新增: `renderer3d/turtle.py`
+- 修改: `renderer3d/geometry.py`, `renderer3d/__init__.py`, `main.py`
+
+---
+
+# Feature: 详细推导面板
+
+## 目标
+在侧边栏增加「详解」按钮，点击后弹出全屏遮罩式面板，显示四课三传的完整推导步骤。
+
+## 实现内容
+- `liuren/derivation.py`: `generate_detailed_derivation()`函数
+  - 输出月将确定、天盘旋转、四课推导、三传推导、天将推导全过程
+- `ui/derivation_overlay.py`: DerivationOverlay类
+  - 700x700半透明遮罩面板，滚动条，关闭按钮
+- `ui/sidebar.py`: 新增「详解」按钮(推导过程标题栏右侧)
+- `main.py`: 事件处理+渲染管线集成
+
+## 关键文件
+- 新增: `liuren/derivation.py`, `ui/derivation_overlay.py`
+- 修改: `ui/sidebar.py`, `ui/__init__.py`, `main.py`
