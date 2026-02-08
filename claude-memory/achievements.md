@@ -500,3 +500,5 @@ Progress tracking for 赛博大六壬 四课三传系统
 | 2026-02-07 | 验证 | 四圣兽位置确认 | 追踪完整坐标管线(mansion index→角度→3D世界→相机→FBO flip)，确认四兽位置正确：玄武=子(下)、朱雀=午(上)、青龙=卯(左)、白虎=酉(右) |
 | 2026-02-07 | Feature | 3D装饰龟 | geometry.py新增5个龟mesh函数(shell/head/leg/tail/hex), TurtleRenderer3D类(Blinn-Phong+线条shader), 渲染管线最前端, 430 tests pass |
 | 2026-02-07 | Feature | 详细推导面板 | liuren/derivation.py生成83行详细推导(月将/天盘/四课/三传/天将5部分), DerivationOverlay(700x700遮罩+滚动条), sidebar「详解」按钮, 430 tests pass |
+| 2026-02-07 | Rework | 龟模型重构 | geometry.py新增_swept_tube()/\_ellipsoid_mesh()通用工具+plastron/bridge/scute_pattern新mesh，turtle.py全面重写(R=2.8/H=1.25/Y=-2.75/per-part colors/articulated legs/S-curve neck)，效果仍不理想 |
+| 2026-02-07 | Removal | 移除3D装饰龟 | 从main.py/\_\_init\_\_.py移除TurtleRenderer3D的import和调用，turtle.py/geometry.py龟相关代码保留但不使用，430 tests pass |
