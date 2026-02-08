@@ -23,7 +23,7 @@ from lunar_calendar.ganzhi import get_day_ganzhi, get_hour_branch
 from ui import InputPanel, PlateHighlighter, ResultSidebar, DerivationOverlay
 
 # 导入3D渲染模块
-from renderer3d import GLContext, OrbitCamera, PlateRenderer3D, CelestialRenderer3D, TurtleRenderer3D
+from renderer3d import GLContext, OrbitCamera, PlateRenderer3D, CelestialRenderer3D
 
 
 def ease_out_cubic(t):
@@ -116,7 +116,7 @@ class CyberLiuren:
         self.celestial_renderer = CelestialRenderer3D(
             self.gl_context.ctx, _DH, _HR
         )
-        self.turtle_renderer = TurtleRenderer3D(self.gl_context.ctx)
+
         self.right_dragging = False
         self.last_right_mouse_pos = (0, 0)
 
@@ -817,10 +817,7 @@ class CyberLiuren:
             self.gl_context.ctx.ONE_MINUS_SRC_ALPHA
         )
 
-        # A. 装饰龟（最底层）
-        self.turtle_renderer.render(vp, camera_pos)
-
-        # B. 地盘
+        # A. 地盘
         self.plate_renderer.render_earth(vp, camera_pos)
 
         # C. 盘间阴影（地盘表面，天盘下方）
@@ -1002,7 +999,6 @@ class CyberLiuren:
             pygame.display.flip()
             self.clock.tick(FPS)
 
-        self.turtle_renderer.release()
         self.celestial_renderer.release()
         self.plate_renderer.release()
         self.gl_context.release()
