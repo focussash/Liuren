@@ -120,6 +120,9 @@ class CyberLiuren:
         self.right_dragging = False
         self.last_right_mouse_pos = (0, 0)
 
+        # --- 3D面板隐藏/全屏 ---
+        self.panels_visible = True
+
     def load_fonts(self):
         """字体加载与回退逻辑"""
         font_names = ["simhei", "microsoftyahei", "pingfangsc", "notosanscjksc", "simsun"]
@@ -342,6 +345,26 @@ class CyberLiuren:
                 color = (180, 100, 100)  # 暗红色
             self.draw_rotated_text(screen, general_short, self.font_s,
                                    color, (x, y), text_angle)
+
+    def _get_toggle_btn_rect(self):
+        """3D模式面板切换按钮的矩形区域"""
+        return pygame.Rect(self.plate_area_width - 40, 10, 30, 30)
+
+    def _draw_toggle_btn(self, screen):
+        """绘制3D模式面板切换按钮"""
+        rect = self._get_toggle_btn_rect()
+        # Background
+        btn_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(btn_surf, (40, 40, 50, 180), (0, 0, rect.width, rect.height),
+                         border_radius=5)
+        pygame.draw.rect(btn_surf, (120, 100, 60, 200), (0, 0, rect.width, rect.height),
+                         1, border_radius=5)
+        screen.blit(btn_surf, rect.topleft)
+        # Icon: "◀" when panels visible (click to hide), "▶" when hidden (click to show)
+        icon = "◀" if self.panels_visible else "▶"
+        icon_surf = self.hud_font.render(icon, True, COLOR_TEXT_DIM)
+        icon_rect = icon_surf.get_rect(center=rect.center)
+        screen.blit(icon_surf, icon_rect)
 
     def save_screenshot(self):
         """保存截图到文件"""
@@ -860,11 +883,23 @@ class CyberLiuren:
                 if self.derivation_overlay.handle_event(event):
                     continue
 
-                # UI事件优先处理
-                if self.input_panel.handle_event(event):
-                    continue
-                if self.sidebar.handle_event(event):
-                    continue
+                # 3D全屏切换按钮
+                if (self.mode_3d and event.type == pygame.MOUSEBUTTONDOWN
+                        and event.button == 1):
+                    btn_rect = self._get_toggle_btn_rect()
+                    if btn_rect.collidepoint(event.pos):
+                        self.panels_visible = not self.panels_visible
+                        self.plate_area_width = 800 if self.panels_visible else WINDOW_SIZE[0]
+                        self.gl_context.resize(self.plate_area_width, WINDOW_SIZE[1])
+                        self.center = (self.plate_area_width // 2, WINDOW_SIZE[1] // 2)
+                        continue
+
+                # UI事件优先处理（仅面板可见时处理）
+                if self.panels_visible or not self.mode_3d:
+                    if self.input_panel.handle_event(event):
+                        continue
+                    if self.sidebar.handle_event(event):
+                        continue
 
                 # 式盘交互
                 if event.type == pygame.MOUSEBUTTONDOWN:
@@ -927,7 +962,19 @@ class CyberLiuren:
                             self.celestial_rise = 0.0
                             self.beast_alpha = 0.0
                             self.rise_anim_start = pygame.time.get_ticks()
+                        else:
+                            # 回到2D时恢复面板
+                            if not self.panels_visible:
+                                self.panels_visible = True
+                                self.plate_area_width = 800
+                                self.gl_context.resize(self.plate_area_width, WINDOW_SIZE[1])
                         print(f"Mode: {'3D' if self.mode_3d else '2D'}")
+                    elif event.key == pygame.K_EQUALS and self.mode_3d:
+                        # "=" 键: 切换面板显示 (仅3D模式)
+                        self.panels_visible = not self.panels_visible
+                        self.plate_area_width = 800 if self.panels_visible else WINDOW_SIZE[0]
+                        self.gl_context.resize(self.plate_area_width, WINDOW_SIZE[1])
+                        self.center = (self.plate_area_width // 2, WINDOW_SIZE[1] // 2)
                     elif event.key == pygame.K_F5:
                         self.save_screenshot()
                     elif event.key == pygame.K_HOME and self.mode_3d:
@@ -982,9 +1029,14 @@ class CyberLiuren:
                 # === 2D渲染路径（原有逻辑不变）===
                 self._render_2d()
 
-            # E. 绘制UI组件（两种模式通用）
-            self.sidebar.draw(self.screen)       # 先绘制侧边栏
-            self.input_panel.draw(self.screen)   # 后绘制输入面板（下拉菜单在上层）
+            # E. 绘制UI组件
+            if self.panels_visible or not self.mode_3d:
+                self.sidebar.draw(self.screen)       # 先绘制侧边栏
+                self.input_panel.draw(self.screen)   # 后绘制输入面板（下拉菜单在上层）
+
+            # E2. 3D模式面板切换按钮
+            if self.mode_3d:
+                self._draw_toggle_btn(self.screen)
 
             # F. 详解遮罩（最上层）
             self.derivation_overlay.draw(self.screen)
@@ -992,7 +1044,10 @@ class CyberLiuren:
             # G. HUD
             now = datetime.datetime.now()
             mode_str = "3D" if self.mode_3d else "2D"
-            info_text = f"[{mode_str}] {now.strftime('%Y-%m-%d %H:%M')} | TAB: 切换模式 | SPACE: 自动归位 | F5: 截图"
+            if self.mode_3d:
+                info_text = f"[{mode_str}] {now.strftime('%Y-%m-%d %H:%M')} | TAB: 2D | =: {'显示面板' if not self.panels_visible else '全屏'} | SPACE: 归位 | F5: 截图"
+            else:
+                info_text = f"[{mode_str}] {now.strftime('%Y-%m-%d %H:%M')} | TAB: 3D | SPACE: 自动归位 | F5: 截图"
             hud = self.hud_font.render(info_text, True, COLOR_TEXT_DIM)
             self.screen.blit(hud, (20, WINDOW_SIZE[1] - 35))
 

@@ -116,6 +116,57 @@ class GLContext:
         surface = pygame.image.frombuffer(arr.tobytes(), (self.width, self.height), 'RGBA')
         return surface
 
+    def resize(self, width, height):
+        """Resize the FBO to a new width/height, releasing old resources."""
+        if width == self.width and height == self.height:
+            return
+
+        # Release old FBO resources (but NOT test scene or ctx)
+        self.fbo.release()
+        if self._msaa:
+            self._color_ms.release()
+            self._depth_ms.release()
+            self._fbo_resolve.release()
+        else:
+            if hasattr(self, '_depth'):
+                self._depth.release()
+        self._color_resolve.release()
+
+        self.width = width
+        self.height = height
+
+        # Recreate FBO at new size
+        was_msaa = self._msaa
+        self._msaa = False
+
+        if was_msaa:
+            try:
+                self._color_ms = self.ctx.renderbuffer(
+                    (width, height), 4, samples=4
+                )
+                self._depth_ms = self.ctx.depth_renderbuffer(
+                    (width, height), samples=4
+                )
+                self.fbo = self.ctx.framebuffer(
+                    color_attachments=[self._color_ms],
+                    depth_attachment=self._depth_ms
+                )
+                self._color_resolve = self.ctx.texture((width, height), 4)
+                self._fbo_resolve = self.ctx.framebuffer(
+                    color_attachments=[self._color_resolve]
+                )
+                self._msaa = True
+            except Exception:
+                was_msaa = False
+
+        if not self._msaa:
+            self._color_resolve = self.ctx.texture((width, height), 4)
+            self._depth = self.ctx.depth_renderbuffer((width, height))
+            self.fbo = self.ctx.framebuffer(
+                color_attachments=[self._color_resolve],
+                depth_attachment=self._depth
+            )
+
     def release(self):
         """Clean up all GL resources."""
         self.test_vao.release()
