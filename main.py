@@ -21,6 +21,10 @@ from lunar_calendar.ganzhi import get_day_ganzhi, get_hour_branch
 
 # 导入UI组件
 from ui import InputPanel, PlateHighlighter, ResultSidebar, DerivationOverlay
+from ui.interpretation_overlay import InterpretationOverlay
+
+# 导入LLM解盘
+from llm.interpreter import LLMInterpreter
 
 # 导入3D渲染模块
 from renderer3d import GLContext, OrbitCamera, PlateRenderer3D, CelestialRenderer3D
@@ -74,6 +78,11 @@ class CyberLiuren:
         self.derivation_overlay = DerivationOverlay(50, 50, 700, 700, self.hud_font)
         self.sidebar.set_detail_callback(lambda: self.derivation_overlay.toggle())
         self.highlighter = PlateHighlighter(self.center, self.heaven_radius)
+
+        # LLM解盘
+        self.llm_interpreter = LLMInterpreter()
+        self.interpretation_overlay = InterpretationOverlay(50, 30, 750, 720, self.hud_font)
+        self.sidebar.set_interpret_callback(self.on_interpret)
 
         # --- 当前盘局状态 ---
         self.current_plate = None
@@ -212,6 +221,28 @@ class CyberLiuren:
 
         # 12. 标记3D天盘纹理需更新（等布将动画完成后重建）
         self.heaven_3d_needs_update = True
+
+    def on_interpret(self):
+        """LLM解盘按钮回调"""
+        if not self.current_plate or self.llm_interpreter.is_busy:
+            return
+
+        personas = self.sidebar.get_selected_personas()
+        purpose = self.sidebar.get_selected_purpose()
+
+        # 构建增强版盘局文本
+        from export.text_export import export_plate_text_for_llm
+        plate_text = export_plate_text_for_llm(self.current_plate)
+
+        # 显示loading遮罩
+        self.interpretation_overlay.show_loading()
+
+        # 异步调用LLM
+        self.llm_interpreter.interpret_async(
+            plate_text, personas, purpose,
+            self.current_plate.day_stem,
+            self.current_plate.day_branch
+        )
 
         print(f"排盘完成: {day_stem}{day_branch}日 {hour_branch}时 月将{moon_general}({moon_general_name}) 课体:{self.current_lesson_type}")
 
@@ -879,7 +910,11 @@ class CyberLiuren:
                     running = False
                     continue
 
-                # 详解遮罩最优先
+                # LLM解盘遮罩最优先
+                if self.interpretation_overlay.handle_event(event):
+                    continue
+
+                # 详解遮罩次优先
                 if self.derivation_overlay.handle_event(event):
                     continue
 
@@ -1019,6 +1054,12 @@ class CyberLiuren:
                     if abs(self.velocity) < 0.01:
                         self.velocity = 0
 
+            # --- 2b. LLM结果轮询 ---
+            if self.llm_interpreter.has_result:
+                self.interpretation_overlay.set_result(self.llm_interpreter.get_result())
+            elif self.llm_interpreter.has_error:
+                self.interpretation_overlay.set_error(self.llm_interpreter.get_error())
+
             # --- 3. 渲染 ---
             self.screen.fill(COLOR_BG)
 
@@ -1038,8 +1079,11 @@ class CyberLiuren:
             if self.mode_3d:
                 self._draw_toggle_btn(self.screen)
 
-            # F. 详解遮罩（最上层）
+            # F. 详解遮罩
             self.derivation_overlay.draw(self.screen)
+
+            # F2. LLM解盘遮罩（最上层）
+            self.interpretation_overlay.draw(self.screen)
 
             # G. HUD
             now = datetime.datetime.now()

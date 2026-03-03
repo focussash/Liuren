@@ -502,3 +502,80 @@ Progress tracking for 赛博大六壬 四课三传系统
 | 2026-02-07 | Feature | 详细推导面板 | liuren/derivation.py生成83行详细推导(月将/天盘/四课/三传/天将5部分), DerivationOverlay(700x700遮罩+滚动条), sidebar「详解」按钮, 430 tests pass |
 | 2026-02-07 | Rework | 龟模型重构 | geometry.py新增_swept_tube()/\_ellipsoid_mesh()通用工具+plastron/bridge/scute_pattern新mesh，turtle.py全面重写(R=2.8/H=1.25/Y=-2.75/per-part colors/articulated legs/S-curve neck)，效果仍不理想 |
 | 2026-02-07 | Removal | 移除3D装饰龟 | 从main.py/\_\_init\_\_.py移除TurtleRenderer3D的import和调用，turtle.py/geometry.py龟相关代码保留但不使用，430 tests pass |
+
+---
+
+## Main Project 4: 自动解盘 (LLM-Based Interpretation)
+
+### Status: IMPLEMENTED (待用户验证)
+
+**子项目清单**:
+- [x] LLM-1: llm/包 (backends + prompts + interpreter)
+- [x] LLM-2: 解盘结果遮罩面板 (InterpretationOverlay)
+- [x] LLM-3: 侧边栏LLM区域 (checkboxes + radios + trigger)
+- [x] LLM-4: main.py集成 (callbacks + polling + event + render)
+- [x] LLM-5: 增强盘局导出 + 安装anthropic SDK
+
+### LLM-1: llm/ 包
+- Created `llm/__init__.py`: 导出 LLMInterpreter
+- Created `llm/backends.py`:
+  - `LLMBackend` 基类 + `BACKEND_REGISTRY`
+  - `AnthropicBackend` (claude-sonnet-4-6默认)
+  - `OpenAIBackend` (gpt-4o默认) — 已实现，可用
+  - `GeminiBackend` (gemini-2.0-flash默认) — 已实现，可用
+- Created `llm/prompts.py`:
+  - `PERSONA_PROFILES`: 管辂 (三国魏·直言分析) + 贺茂忠行 (平安·阴阳道仪式感)
+  - `PURPOSE_TEMPLATES`: 射覆 (推断隐藏物) + 占卜明日运势
+  - `build_system_prompt()`: 单人/多人prompt构建
+  - `build_user_prompt()`: 盘局数据 + 五行注释
+- Created `llm/interpreter.py`:
+  - `.env` 配置解析 (LLM_PROVIDER/LLM_MODEL/API_KEY)
+  - daemon线程异步API调用
+  - `is_busy`/`has_result`/`has_error` 轮询属性
+- Created `.env.example`, `.gitignore`
+- **Tests**: 430/430 passed (无新测试，纯功能模块)
+
+### LLM-2: InterpretationOverlay
+- Created `ui/interpretation_overlay.py`:
+  - 克隆 DerivationOverlay 模式 (750x720)
+  - `show_loading()`: 脉冲"解卦中..."动画
+  - `set_result()`: 自动换行（中文字符级）
+  - `set_error()`: 红色错误显示
+  - 滚动条 + 关闭按钮 + ESC关闭
+  - loading时禁止关闭
+- Updated `ui/__init__.py`
+
+### LLM-3: 侧边栏LLM区域
+- Extended `ui/sidebar.py`:
+  - "自动解盘 ▶/▼" 折叠切换按钮
+  - 人物复选框: [✓]管辂 [✓]贺茂忠行 (默认全选)
+  - 目的单选: (●)射覆 (○)占卜明日运势
+  - "解盘" 全宽触发按钮
+  - `set_interpret_callback()`, `get_selected_personas()`, `get_selected_purpose()`
+  - 所有rect动态定位，完美融入sidebar滚动
+
+### LLM-4: main.py集成
+- Import: LLMInterpreter + InterpretationOverlay
+- Init: interpreter + overlay + sidebar callback
+- `on_interpret()`: 构建plate_text → show_loading → interpret_async
+- 事件优先级: InterpretationOverlay > DerivationOverlay > 3D toggle > UI > Plate
+- 主循环轮询: has_result → set_result, has_error → set_error
+- 渲染: interpretation_overlay在derivation_overlay之后(最上层)
+
+### LLM-5: 增强盘局导出
+- Added `export_plate_text_for_llm()` to `export/text_export.py`:
+  - 日干支含五行注释
+  - 天地盘完整12位映射表
+  - 四课含天将 + 五行关系
+  - 三传含天将 + 五行
+  - 天将盘12宫
+  - 贵人信息
+- Installed `anthropic==0.84.0` into biomotum venv
+
+| Date | Sub-project | Item | Notes |
+|------|-------------|------|-------|
+| 2026-03-03 | LLM-1 | llm/包 | backends(3 providers) + prompts(2 personas/2 purposes) + interpreter(async thread), 430 tests pass |
+| 2026-03-03 | LLM-2 | 解盘遮罩 | InterpretationOverlay: loading脉冲 + 自动换行 + 滚动 + 错误显示, 430 tests pass |
+| 2026-03-03 | LLM-3 | 侧边栏LLM | 折叠区域: checkboxes + radios + 解盘按钮, 430 tests pass |
+| 2026-03-03 | LLM-4 | main.py集成 | on_interpret + 轮询 + 事件/渲染优先级, 430 tests pass |
+| 2026-03-03 | LLM-5 | 导出增强 | export_plate_text_for_llm() + pip install anthropic, 430 tests pass |

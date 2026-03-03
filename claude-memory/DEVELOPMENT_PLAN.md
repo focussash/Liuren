@@ -1785,3 +1785,268 @@ ORDERED_XIU_R中每组7星顺序连线:
 ## 关键文件
 - 新增: `liuren/derivation.py`, `ui/derivation_overlay.py`
 - 修改: `ui/sidebar.py`, `ui/__init__.py`, `main.py`
+
+---
+---
+
+# Main Project 4: 自动解盘 (LLM-Based Divination Interpretation)
+
+## 项目概述
+
+排盘完成后，用户可选择历史占卜名家的风格和占卜目的，程序将盘局数据发送给LLM（Claude/OpenAI/Gemini），获取自动解读。
+
+**核心功能**:
+- 侧边栏"自动解盘"可折叠区域（人物选择 + 目的选择 + 解盘按钮）
+- 多LLM后端支持（先实现Anthropic，预留OpenAI/Gemini接口）
+- 后台线程调用API，UI显示"解卦中..."，完成后弹出解读结果遮罩
+
+**技术方案**:
+- `LLMBackend` 基类 + 各provider子类（~15行/子类）
+- `.env` 配置: `LLM_PROVIDER`, `LLM_MODEL`, provider-specific API key
+- 后台线程 + GIL原子性轮询（无需锁），主线程每帧检查结果
+- `InterpretationOverlay`（克隆 `DerivationOverlay` 模式，增加loading态+自动换行）
+
+## 新增项目结构
+
+```
+Liuren/
+├── llm/                         # [新建] LLM集成包
+│   ├── __init__.py              # 导出 LLMInterpreter
+│   ├── backends.py              # LLMBackend基类 + AnthropicBackend
+│   ├── prompts.py               # 人物描述 + 目的模板 + prompt构建
+│   └── interpreter.py           # 配置加载、后端选择、异步调用、结果轮询
+├── ui/
+│   └── interpretation_overlay.py # [新建] LLM解盘结果遮罩面板
+├── .env.example                 # [新建] 配置模板
+├── .gitignore                   # [新建]
+```
+
+## 新增依赖
+
+```bash
+# 仅需安装所选provider的SDK
+pip install anthropic        # Anthropic (默认)
+# pip install openai         # OpenAI (待实现)
+# pip install google-genai   # Gemini (待实现)
+```
+
+---
+
+# 子项目 LLM-1: llm/ 包（后端抽象 + prompt工程 + 解释器）
+
+## 目标
+创建 `llm/` 包，实现多provider后端抽象、prompt构建、异步API调用。
+
+## 实现内容
+
+### llm/backends.py — Provider抽象
+```python
+class LLMBackend:
+    """基类。每个provider实现 call()。"""
+    def call(self, system_prompt: str, user_prompt: str, model: str) -> str:
+        raise NotImplementedError
+
+class AnthropicBackend(LLMBackend):
+    """Anthropic实现。惰性导入anthropic包。默认模型: claude-sonnet-4-6"""
+    def call(self, system_prompt, user_prompt, model):
+        from anthropic import Anthropic
+        client = Anthropic(api_key=self.api_key)
+        resp = client.messages.create(model=model, max_tokens=4096,
+                                       system=system_prompt,
+                                       messages=[{"role": "user", "content": user_prompt}])
+        return resp.content[0].text
+
+# PENDING: OpenAIBackend (openai SDK, 默认 gpt-4o)
+# PENDING: GeminiBackend (google-genai SDK, 默认 gemini-2.0-flash)
+```
+
+### llm/prompts.py — Prompt工程
+- `PERSONA_PROFILES` dict:
+  - 管辂 (209-256 CE, 三国魏): 直言不讳、分析缜密，擅射覆
+  - 贺茂忠行 (~917-977 CE, 平安时代): 庄重仪式感，融合阴阳道
+- `PURPOSE_TEMPLATES` dict:
+  - 射覆: 推断隐藏之物的材质/颜色/形状
+  - 占卜明日运势: 从五行生克/天将吉凶分析运势
+- `build_system_prompt(personas: list[str]) -> str`: 单人→一个视角；多人→分段各自解读
+- `build_user_prompt(plate_text, purpose, day_stem, day_branch) -> str`: 盘局数据 + 五行注释
+
+### llm/interpreter.py — 异步解释器
+- `LLMInterpreter` class:
+  - `_load_config()`: 解析 `.env` (简单行读取器，无需python-dotenv)，回退到环境变量
+  - `_create_backend()`: 根据 `LLM_PROVIDER` 实例化对应后端
+  - `is_busy` / `has_result` / `has_error` 属性（GIL原子性，无需锁）
+  - `get_result()` / `get_error()`: 消费式读取（读后清空）
+  - `interpret_async(plate_text, personas, purpose, ...)`: 启动daemon线程
+  - `_run_interpretation(...)`: 构建prompt → `backend.call()` → 设置 `_result` 或 `_error`
+
+### .env.example
+```
+LLM_PROVIDER=anthropic
+LLM_MODEL=claude-sonnet-4-6
+ANTHROPIC_API_KEY=your-key-here
+# OPENAI_API_KEY=your-key-here
+# GEMINI_API_KEY=your-key-here
+```
+
+## 关键文件
+- 新建: `llm/__init__.py`, `llm/backends.py`, `llm/prompts.py`, `llm/interpreter.py`
+- 新建: `.env.example`, `.gitignore`
+
+---
+
+# 子项目 LLM-2: 解盘结果遮罩面板
+
+## 目标
+克隆 `DerivationOverlay` 模式，创建 `InterpretationOverlay`，支持loading态和自动换行。
+
+## 实现内容
+
+### ui/interpretation_overlay.py
+- 克隆自 `ui/derivation_overlay.py` (208行)
+- 标题: "【LLM解盘】"
+- `show_loading()`: `self.loading = True`, `self.visible = True`
+- `draw()` loading态: 绘制"解卦中..."并用 `pygame.time.get_ticks()` 做脉冲动画
+- `set_result(text: str)`: 按换行符分割 + 自动换行（中文按字符宽度）
+- `set_error(error: str)`: 红色调显示错误信息
+- `_wrap_text(text) -> List[str]`: 用 `font.size()` 测量像素宽度做字符级换行
+- 分区标题检测: 含"━"的行 → 用 COLOR_SECTION 样式
+
+## 关键文件
+- 新建: `ui/interpretation_overlay.py`
+- 修改: `ui/__init__.py`
+
+---
+
+# 子项目 LLM-3: 侧边栏LLM区域
+
+## 目标
+在侧边栏推导过程下方添加可折叠的"自动解盘"区域。
+
+## 实现内容
+
+### ui/sidebar.py 扩展
+新增状态:
+```python
+self.llm_expanded = False
+self.persona_options = ['管辂', '贺茂忠行']
+self.persona_selected = [True, True]  # 默认全选
+self.purpose_options = ['射覆', '占卜明日运势']
+self.purpose_selected = 0  # 索引
+self.interpret_callback = None
+```
+
+新增方法:
+- `set_interpret_callback(callback)`: 存储回调
+- `get_selected_personas() -> list[str]`: 返回勾选的人物名
+- `get_selected_purpose() -> str`: 返回选中的目的名
+- `_draw_llm_section(screen, y, clip_rect) -> int`: 绘制区域
+
+UI布局（展开时）:
+```
+[自动解盘 ▼]                     ← 切换按钮 (70x22)
+  解盘人物：                      ← 标签
+  [✓] 管辂  [✓] 贺茂忠行         ← 复选框
+  占卜目的：                      ← 标签
+  (●) 射覆  (○) 占卜明日运势     ← 单选按钮
+  [     解  盘     ]              ← 触发按钮 (全宽)
+```
+
+**设计决策**: 用复选框+单选按钮（非DropdownSelector），因为sidebar内容在clip区域内滚动，下拉菜单会被裁剪。
+
+## 关键文件
+- 修改: `ui/sidebar.py`
+
+---
+
+# 子项目 LLM-4: 主程序集成
+
+## 目标
+将LLM解释器和结果遮罩面板集成到main.py。
+
+## 实现内容
+
+### 初始化
+```python
+from llm.interpreter import LLMInterpreter
+from ui.interpretation_overlay import InterpretationOverlay
+self.llm_interpreter = LLMInterpreter()
+self.interpretation_overlay = InterpretationOverlay(50, 30, 750, 720, self.hud_font)
+self.sidebar.set_interpret_callback(self.on_interpret)
+```
+
+### on_interpret() 方法
+1. 守卫: `if not self.current_plate or self.llm_interpreter.is_busy: return`
+2. 从sidebar获取personas/purpose
+3. 通过 `export_plate_text_for_llm()` 序列化盘局数据
+4. `self.interpretation_overlay.show_loading()`
+5. `self.llm_interpreter.interpret_async(...)`
+
+### 主循环轮询（update阶段）
+```python
+if self.llm_interpreter.has_result:
+    self.interpretation_overlay.set_result(self.llm_interpreter.get_result())
+elif self.llm_interpreter.has_error:
+    self.interpretation_overlay.set_error(self.llm_interpreter.get_error())
+```
+
+### 事件优先级
+InterpretationOverlay（最高）→ DerivationOverlay → 3D toggle → InputPanel/Sidebar → Plate
+
+### 渲染顺序
+InterpretationOverlay 在 DerivationOverlay 之后绘制（最上层遮罩）
+
+## 关键文件
+- 修改: `main.py`
+
+---
+
+# 子项目 LLM-5: 增强盘局导出 + 安装依赖
+
+## 目标
+为LLM创建增强版盘局文本导出（含天将+五行注释），安装SDK。
+
+## 实现内容
+
+### export/text_export.py — 新增 `export_plate_text_for_llm()`
+- 四课表格含天将 (Lesson.general)
+- 三传含天将
+- 五行注释 (日干五行, 日支五行)
+- 天地盘完整12位映射表
+- 贵人信息
+- 不含时间戳/装饰性分隔线
+
+### 安装（仅需当前provider的SDK）
+```bash
+"E:\MiniConda\envs\biomotum\python.exe" -m pip install anthropic
+```
+
+## 关键文件
+- 修改: `export/text_export.py`
+
+---
+
+# Main Project 4 依赖关系
+
+```
+LLM-1 (llm/包) ──┬──→ LLM-4 (main.py集成)
+                  │
+LLM-2 (遮罩面板) ─┤
+                  │
+LLM-3 (侧边栏) ──┘
+                        │
+                        v
+                  LLM-5 (导出增强+安装)
+```
+
+LLM-1/2/3 可并行开发，LLM-4 依赖前三者，LLM-5 可在任意阶段完成。
+
+---
+
+# Main Project 4 Pending Improvements (待实现)
+
+- **OpenAIBackend**: `llm/backends.py` 新增。`openai` SDK, `client.chat.completions.create()`。默认模型 `gpt-4o`。~15行。
+- **GeminiBackend**: `llm/backends.py` 新增。`google-genai` SDK, `client.models.generate_content()`。默认模型 `gemini-2.0-flash`。~15行。
+- **UI provider选择器**: 在侧边栏LLM区域添加provider下拉，运行时切换（目前仅.env配置）
+- **更多人物**: 邵雍、袁天罡、安倍晴明等
+- **更多占卜目的**: 占病、占行人、占失物等
+- **流式显示**: 从一次性显示改为流式输出，提升长回复的UX
